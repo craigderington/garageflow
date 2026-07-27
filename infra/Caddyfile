@@ -1,0 +1,14 @@
+garageflow.localhost {
+	# /api/* -> API (handle_path strips the /api prefix before proxying)
+	handle_path /api/* {
+		reverse_proxy api:8080
+	}
+	# everything else -> web app
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+api.garageflow.localhost {
+	reverse_proxy api:8080
+}

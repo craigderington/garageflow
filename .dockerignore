@@ -1,0 +1,14 @@
+# Keep build contexts lean and free of host-arch artifacts.
+**/node_modules
+**/.next
+**/dist
+**/bin
+apps/api-go/server
+**/test-results
+**/playwright-report
+**/.playwright
+**/*.log
+.git
+.env
+**/.DS_Store
+docs
