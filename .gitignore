@@ -1,0 +1,22 @@
+# Secrets — never commit. Server .env is created out-of-band and chmod 600.
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+bin/
+apps/api-go/server
+
+# Test artifacts
+test-results/
+playwright-report/
+.playwright/
+
+# Logs / OS cruft
+*.log
+.DS_Store
