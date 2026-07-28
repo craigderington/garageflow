@@ -184,7 +184,12 @@ func main() {
 	} else {
 		log.Printf("payments: stripe not configured, using dev settlement")
 	}
-	estHandler := estimates.NewHandler(pool, bus, paySvc, cfg.AppURL)
+	// demo.IsDemoShop keeps a prospect's "collect payment" click off the
+	// merchant's real Stripe account — the payment counterpart to the SMS and
+	// email guards wired up below.
+	estHandler := estimates.NewHandler(pool, bus, paySvc, cfg.AppURL, func(ctx context.Context) bool {
+		return demo.IsDemoShop(ctx, pool)
+	})
 
 	store, backend := storage.New(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOBucket, false)
 	log.Printf("storage: using %s backend", backend)

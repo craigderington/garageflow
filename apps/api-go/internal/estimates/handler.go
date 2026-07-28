@@ -1,6 +1,7 @@
 package estimates
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -21,10 +22,24 @@ type Handler struct {
 	bus    *events.Bus
 	pay    *payments.Service
 	appURL string
+	isDemo func(context.Context) bool
 }
 
-func NewHandler(db *pgxpool.Pool, bus *events.Bus, pay *payments.Service, appURL string) *Handler {
-	return &Handler{db: db, bus: bus, pay: pay, appURL: appURL}
+// NewHandler builds the estimates handler. isDemo reports whether the request's
+// tenant is a demo shop; Pay uses it to keep a prospect away from the
+// merchant's real Stripe account. It is injected rather than imported so this
+// package does not depend on internal/demo (which depends on middleware, sms
+// and email) just for one predicate — main.go passes demo.IsDemoShop.
+//
+// A nil isDemo fails CLOSED — every shop is treated as a demo and no real
+// Checkout Session is ever created — matching demo.GuardSMS/GuardEmail. A
+// wiring mistake should cost a merchant a card payment, not charge a
+// prospect's.
+func NewHandler(db *pgxpool.Pool, bus *events.Bus, pay *payments.Service, appURL string, isDemo func(context.Context) bool) *Handler {
+	if isDemo == nil {
+		isDemo = func(context.Context) bool { return true }
+	}
+	return &Handler{db: db, bus: bus, pay: pay, appURL: appURL, isDemo: isDemo}
 }
 
 type createEstimateRequest struct {
@@ -221,6 +236,21 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 	amountCents := int64(total*100 + 0.5)
 	success := h.appURL + "/estimates?paid=" + id
 	cancel := h.appURL + "/estimates"
+
+	// A demo tenant must never touch the merchant's live Stripe account.
+	// Without this, a prospect clicking "collect payment" in the demo would
+	// create a real Checkout Session on the real account in production. Settle
+	// locally exactly as the no-key dev path does, so the prospect still sees
+	// the estimate go paid and the whole flow demos correctly.
+	if h.isDemo(r.Context()) {
+		if err := h.settle(r, id, shopID); err != nil {
+			http.Error(w, `{"error":"settle failed"}`, http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"url": success, "mode": "dev"})
+		return
+	}
+
 	session, err := h.pay.CreateCheckoutSession(
 		r.Context(), amountCents, "usd", "GarageFlow estimate "+id[:8], success, cancel,
 		map[string]string{"estimate_id": id, "shop_id": shopID},
@@ -232,14 +262,21 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 
 	// In dev mode there is no webhook, so settle immediately.
 	if session.Mode == "dev" {
-		if _, err := h.db.Exec(r.Context(),
-			`UPDATE estimates SET status = 'paid', updated_at = NOW() WHERE id = $1 AND shop_id = $2`, id, shopID); err != nil {
+		if err := h.settle(r, id, shopID); err != nil {
 			http.Error(w, `{"error":"settle failed"}`, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"url": session.URL, "mode": session.Mode})
+}
+
+// settle marks an estimate paid without a Stripe round trip — the path taken
+// when no Stripe key is configured and when the tenant is a demo.
+func (h *Handler) settle(r *http.Request, id, shopID string) error {
+	_, err := h.db.Exec(r.Context(),
+		`UPDATE estimates SET status = 'paid', updated_at = NOW() WHERE id = $1 AND shop_id = $2`, id, shopID)
+	return err
 }
 
 // Webhook receives Stripe events (no auth/tenant middleware). On a completed
