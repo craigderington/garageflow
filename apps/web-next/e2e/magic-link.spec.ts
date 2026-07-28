@@ -48,7 +48,7 @@ test.describe("magic link", () => {
     // The page opens in password mode; the toggle and the submit button both
     // say "send magic link", so match the submit button exactly.
     await page.getByRole("button", { name: "Send magic link instead" }).click();
-    await page.getByPlaceholder("you@shop.com").fill(SEED_EMAIL.owner);
+    await page.getByTestId("signin-email").fill(SEED_EMAIL.owner);
     await page.getByRole("button", { name: "Send Magic Link", exact: true }).click();
 
     const confirmation = page.getByText(/magic link sent|check your email/i);

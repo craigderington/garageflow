@@ -63,6 +63,10 @@ services:
       # above any human rate. 0 disables the limiter; production leaves it unset
       # and gets the default 10/min per IP.
       - AUTH_RATE_LIMIT_PER_MIN=0
+      # The demo spec provisions many shops back-to-back across parallel
+      # workers, far above any real prospect's rate. 0 disables the limiter;
+      # production leaves it unset and gets the default 3/min per IP.
+      - DEMO_RATE_LIMIT_PER_MIN=0
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=garageflow
       - MINIO_SECRET_KEY=garageflow123

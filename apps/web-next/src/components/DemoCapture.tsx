@@ -44,6 +44,7 @@ export function DemoCapture() {
             onChange={(e) => setEmail(e.target.value)}
             className="gf-input pl-9"
             placeholder="you@shop.com"
+            data-testid="demo-email"
           />
         </div>
       </div>

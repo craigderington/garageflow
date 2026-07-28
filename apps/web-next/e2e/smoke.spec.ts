@@ -10,7 +10,7 @@ test.describe("smoke", () => {
 
   test("password login lands on the dashboard", async ({ page }) => {
     await page.goto("/login");
-    await page.getByPlaceholder("you@shop.com").fill(SEED_EMAIL.owner);
+    await page.getByTestId("signin-email").fill(SEED_EMAIL.owner);
     await page.getByPlaceholder("Enter your password").fill(SEED_PASSWORD);
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);

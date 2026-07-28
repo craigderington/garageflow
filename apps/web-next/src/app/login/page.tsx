@@ -76,6 +76,7 @@ export default function LoginPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="gf-input pl-9"
                     placeholder="you@shop.com"
+                    data-testid="signin-email"
                   />
                 </div>
               </div>
