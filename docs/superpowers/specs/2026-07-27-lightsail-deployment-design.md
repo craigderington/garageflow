@@ -97,19 +97,20 @@ Ordering matters; the ignore rules must land before anything is staged.
 
 ### Phase 2 — Production configuration
 
-**The box is not empty.** It already runs the Curalis stack: eight containers,
-with `carehaus-proxy-1` (a custom `httpd:2.4-alpine` build) owning `:80` and
-`:443`, and a real Let's Encrypt certificate for `curalis.care`. GarageFlow
-therefore ships **no reverse proxy of its own** and publishes **no host ports**.
-Curalis must keep serving throughout.
+**Apache runs on the host** and is the reverse proxy: it terminates TLS and
+routes to this stack by `Host` header, exactly as every other application on
+this server is deployed. GarageFlow ships **no proxy of its own** and binds
+**no public interface** — it publishes only to `127.0.0.1`.
 
-Memory is not the constraint it appeared to be: all eight Curalis containers
-total roughly 294MB, leaving ample room for GarageFlow's ~300MB.
+Host ports use a dedicated `283xx` block (`28300` web, `28301` api) rather than
+the usual `3000`/`8080`, because this server runs several applications and the
+common ports collide. They sit below `32768` so they cannot clash with the
+kernel's ephemeral range, and are overridable via `WEB_PORT` / `API_PORT`.
 
 - **`docker-compose.prod.yml`**
-  - No published ports at all. `gf-web` and `gf-api` join the external
-    `carehaus_default` network so Apache can resolve them by name; Postgres,
-    Redis, and MinIO stay on a private `internal` network.
+  - `web` and `api` publish to `127.0.0.1` only, so host Apache can reach them
+    and nothing off-box can. Postgres, Redis, and MinIO publish no host port at
+    all and stay on the private `internal` network.
   - MinIO is internal-only. The API streams objects to clients itself
     (`storage.Store.Get`), with no presigned URLs anywhere, so no browser ever
     contacts MinIO and it needs no route through Apache.
@@ -117,23 +118,23 @@ total roughly 294MB, leaving ample room for GarageFlow's ~300MB.
   - `restart: unless-stopped`, health-gated `depends_on`, and per-service
     memory limits as a runaway guard.
   - Mounts `./migrations` (schema) but **not** `migrations/seed/`.
-- **`infra/apache/garageflow.conf`** — bind-mounted into the Curalis proxy and
-  pulled in with `IncludeOptional`, so GarageFlow's routing lives in its own
-  repo.
-  - Backends are reached with `RewriteRule ... [P]`, **not** `ProxyPass`.
-    Apache resolves `ProxyPass` hostnames when parsing config, so a stopped
-    `gf-web` would make httpd fail to start and take Curalis down with it. `[P]`
-    resolves per request: GarageFlow down means a 502 on its own vhost only.
-  - `/api/*` → `gf-api:8080` with the prefix stripped, matching the dev
-    Caddyfile's `handle_path`. Everything else → `gf-web:3000`.
+- **`infra/apache/garageflow.conf`** — installed to
+  `/etc/apache2/sites-available/garageflow.studio.conf` and enabled with
+  `a2ensite`. Needs `ssl proxy proxy_http proxy_wstunnel headers rewrite`.
+  - `ProxyPass` to `127.0.0.1`. Loopback literals always resolve at config-parse
+    time, so a stopped backend yields a 502 on this vhost rather than blocking
+    Apache from starting.
+  - `/api/ws` → `ws://127.0.0.1:28301/ws` via `mod_proxy_wstunnel`, declared
+    **before** the `/api/` rule — `ProxyPass` matches in order, and an upgrade
+    handshake proxied as plain HTTP fails.
+  - `/api/*` → `127.0.0.1:28301` with the prefix stripped, matching the dev
+    Caddyfile's `handle_path`. Everything else → `127.0.0.1:28300`.
   - Certificates referenced directly from `/etc/letsencrypt/live/`, so renewal
-    needs only an Apache reload.
-  - No `Listen` directive — `curalis.conf` already declares `Listen 443` and a
-    duplicate aborts startup.
-  - Relaxes the global TLS-1.3-only policy to also allow TLS 1.2 for this vhost.
-    That policy exists for Curalis's HIPAA obligation; GarageFlow has none, and
-    1.3-only excludes Android 9 and iOS before 12.2 — phones that customers open
-    DVI links on.
+    needs only an Apache reload — no copy step that can go stale.
+  - The `:80` vhost exempts `/.well-known/acme-challenge/` from the HTTPS
+    redirect, so http-01 renewal stays available as a fallback.
+  - Allows TLS 1.2 alongside 1.3: 1.3-only excludes Android 9 and iOS before
+    12.2 — phones that customers open DVI links on.
 - **Web build arg:** `NEXT_PUBLIC_API_URL=https://garageflow.studio/api`.
   Same-origin is mandatory, not stylistic: the API's CORS allowlist is hardcoded
   to localhost, so a cross-origin `api.garageflow.studio` would break every
@@ -211,13 +212,8 @@ Found while reading the code for the deploy; all are now fixed and verified.
 
 ## Known limitations
 
-- **WebSockets are not proxied.** The API exposes `/ws`, but the Curalis proxy
-  image does not enable `mod_proxy_wstunnel` and no web client currently
-  connects. Adding live updates means enabling that module and adding an
-  upgrade rule.
-- **No `/healthz` on the GarageFlow API**, so the `api` container has no HTTP
-  healthcheck and uptime monitoring has nothing to poll. Curalis has one; worth
-  matching.
+- **No `/healthz` on the API**, so the `api` container has no HTTP healthcheck
+  and uptime monitoring has nothing to poll. Worth adding.
 - **CORS origins are hardcoded** to localhost in `main.go`. Harmless while the
   browser calls the API same-origin, but it makes an API subdomain impossible
   without a code change.
