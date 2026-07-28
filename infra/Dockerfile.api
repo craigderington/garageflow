@@ -2,10 +2,16 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 COPY apps/api-go/ .
-RUN go mod download && go build -o /server ./cmd/server
+RUN go mod download \
+    && go build -o /server ./cmd/server \
+    && go build -o /createadmin ./cmd/createadmin
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /server /server
+# Bootstraps the first shop + owner on a fresh production database, which has
+# no seed data and no signup endpoint:
+#   docker compose run --rm api /createadmin -shop "..." -email "..."
+COPY --from=builder /createadmin /createadmin
 EXPOSE 8080
 CMD ["/server"]

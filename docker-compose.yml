@@ -9,6 +9,13 @@ services:
       - "5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Schema only — initdb ignores the migrations/seed/ subdirectory.
+      #
+      # Do NOT mount a seed file into /docker-entrypoint-initdb.d/ as well: that
+      # target sits inside this bind mount, so Docker creates the file on the
+      # HOST in ./migrations/, where it would be committed and then executed by
+      # the production stack. Demo data is applied over psql instead, by
+      # scripts/dev.sh on startup and scripts/db-reset.sh before each E2E run.
       - ./migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U garageflow"]
@@ -49,6 +56,13 @@ services:
       - DATABASE_URL=postgres://garageflow:garageflow@postgres:5432/garageflow?sslmode=disable
       - REDIS_URL=redis://redis:6379/0
       - SESSION_SECRET=dev-secret-change-in-production
+      # Returns magic-link codes in the API response so dev and the E2E suite
+      # can log in without email. Must never be set in production.
+      - AUTH_DEV_CODES=true
+      # The E2E suite authenticates once per test across parallel workers, well
+      # above any human rate. 0 disables the limiter; production leaves it unset
+      # and gets the default 10/min per IP.
+      - AUTH_RATE_LIMIT_PER_MIN=0
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=garageflow
       - MINIO_SECRET_KEY=garageflow123

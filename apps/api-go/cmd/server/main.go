@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
@@ -71,7 +72,10 @@ func main() {
 	}
 
 	authSvc := auth.NewService(pool, rdb, cfg.SessionSecret, mailer, cfg.AppURL)
-	authHandler := auth.NewHandler(authSvc)
+	authHandler := auth.NewHandler(authSvc, cfg.AuthDevCodes)
+	if cfg.AuthDevCodes {
+		log.Println("[auth] WARNING: AUTH_DEV_CODES is on — magic-link codes are returned in API responses. Never enable this in production.")
+	}
 
 	r := chi.NewRouter()
 
@@ -89,6 +93,13 @@ func main() {
 	}))
 
 	r.Route("/auth", func(r chi.Router) {
+		// Credential and magic-link endpoints are unauthenticated and are the
+		// obvious brute-force target, so cap attempts per client IP. Disabled
+		// (0) for dev and E2E, which log in far faster than any real client.
+		if cfg.AuthRateLimitPerMin > 0 {
+			r.Use(httprate.LimitByIP(cfg.AuthRateLimitPerMin, time.Minute))
+		}
+
 		r.Post("/magic-link", authHandler.MagicLink)
 		r.Post("/verify", authHandler.Verify)
 		r.Post("/login", authHandler.Login)

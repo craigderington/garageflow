@@ -13,10 +13,25 @@ import (
 
 type Handler struct {
 	svc *Service
+	// devCodes echoes the magic-link code back in the HTTP response. It exists
+	// so local dev and the E2E suite can log in without reading email. It must
+	// stay off in production: the code alone is enough to mint a session for
+	// any known address, so returning it is an authentication bypass.
+	devCodes bool
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, devCodes bool) *Handler {
+	return &Handler{svc: svc, devCodes: devCodes}
+}
+
+// magicLinkResponse builds the POST /auth/magic-link body, including the code
+// only when dev codes are enabled.
+func magicLinkResponse(code string, devCodes bool) map[string]string {
+	resp := map[string]string{"status": "sent"}
+	if devCodes {
+		resp["code"] = code
+	}
+	return resp
 }
 
 type magicLinkRequest struct {
@@ -40,7 +55,7 @@ func (h *Handler) MagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"code": code})
+	json.NewEncoder(w).Encode(magicLinkResponse(code, h.devCodes))
 }
 
 func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {

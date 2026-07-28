@@ -17,34 +17,11 @@ TRUNCATE
 RESTART IDENTITY CASCADE;
 SQL
 
-for f in migrations/002_seed_data.sql; do
+# The seed file owns every demo row, including the default inspection template
+# (which is cascade-deleted when shops is truncated above). It lives outside
+# migrations/ so production never applies it.
+for f in migrations/seed/*.sql; do
   echo "  Applying $(basename "$f")..."
   psql "$DB_URL" -f "$f" -q
 done
-
-# The default inspection template (seeded in migration 005) is cascade-deleted
-# when shops is truncated above, so re-seed it. Keep in sync with 005.
-psql "$DB_URL" -q <<'SQL'
-INSERT INTO inspection_templates (shop_id, name, is_default, items) VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'Courtesy Check',
-    true,
-    '[
-        {"section":"Brakes","label":"Front brake pads"},
-        {"section":"Brakes","label":"Rear brake pads"},
-        {"section":"Brakes","label":"Brake fluid"},
-        {"section":"Tires","label":"Front tire tread"},
-        {"section":"Tires","label":"Rear tire tread"},
-        {"section":"Tires","label":"Tire pressure"},
-        {"section":"Fluids","label":"Engine oil level"},
-        {"section":"Fluids","label":"Coolant level"},
-        {"section":"Fluids","label":"Washer fluid"},
-        {"section":"Battery & Electrical","label":"Battery health"},
-        {"section":"Battery & Electrical","label":"Headlights / taillights"},
-        {"section":"Under Hood","label":"Serpentine belt"},
-        {"section":"Under Hood","label":"Air filter"},
-        {"section":"Wipers","label":"Wiper blades"}
-    ]'
-);
-SQL
 echo "Database reset to seed state."

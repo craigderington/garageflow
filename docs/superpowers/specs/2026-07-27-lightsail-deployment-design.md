@@ -97,24 +97,79 @@ Ordering matters; the ignore rules must land before anything is staged.
 
 ### Phase 2 — Production configuration
 
-New files; `docker-compose.yml` and `infra/Caddyfile` remain the dev setup.
+**The box is not empty.** It already runs the Curalis stack: eight containers,
+with `carehaus-proxy-1` (a custom `httpd:2.4-alpine` build) owning `:80` and
+`:443`, and a real Let's Encrypt certificate for `curalis.care`. GarageFlow
+therefore ships **no reverse proxy of its own** and publishes **no host ports**.
+Curalis must keep serving throughout.
+
+Memory is not the constraint it appeared to be: all eight Curalis containers
+total roughly 294MB, leaving ample room for GarageFlow's ~300MB.
 
 - **`docker-compose.prod.yml`**
-  - No host port publishing for `postgres`, `redis`, or `minio` — reachable only
-    on the internal compose network.
-  - `caddy` publishes `80` and `443`; `api` and `web` publish nothing.
-  - All credentials interpolated from the server's `.env`; no literals.
-  - `restart: unless-stopped` on every service.
-  - `depends_on` with `condition: service_healthy` for Postgres and Redis.
-  - Memory limits so a runaway container cannot take down the box.
-- **`infra/Caddyfile.prod`**
-  - `garageflow.studio` — `handle_path /api/*` → `api:8080`, everything else →
-    `web:3000`. Mirrors the dev routing so no client code changes.
-  - `api.garageflow.studio` → `api:8080`.
-  - `www.garageflow.studio` → redirect to apex.
-  - A route fronting MinIO for customer-facing DVI photos (see Assumptions).
-  - Automatic Let's Encrypt via Caddy once DNS resolves.
+  - No published ports at all. `gf-web` and `gf-api` join the external
+    `carehaus_default` network so Apache can resolve them by name; Postgres,
+    Redis, and MinIO stay on a private `internal` network.
+  - MinIO is internal-only. The API streams objects to clients itself
+    (`storage.Store.Get`), with no presigned URLs anywhere, so no browser ever
+    contacts MinIO and it needs no route through Apache.
+  - Credentials interpolated from the server's `.env`; no literals.
+  - `restart: unless-stopped`, health-gated `depends_on`, and per-service
+    memory limits as a runaway guard.
+  - Mounts `./migrations` (schema) but **not** `migrations/seed/`.
+- **`infra/apache/garageflow.conf`** — bind-mounted into the Curalis proxy and
+  pulled in with `IncludeOptional`, so GarageFlow's routing lives in its own
+  repo.
+  - Backends are reached with `RewriteRule ... [P]`, **not** `ProxyPass`.
+    Apache resolves `ProxyPass` hostnames when parsing config, so a stopped
+    `gf-web` would make httpd fail to start and take Curalis down with it. `[P]`
+    resolves per request: GarageFlow down means a 502 on its own vhost only.
+  - `/api/*` → `gf-api:8080` with the prefix stripped, matching the dev
+    Caddyfile's `handle_path`. Everything else → `gf-web:3000`.
+  - Certificates referenced directly from `/etc/letsencrypt/live/`, so renewal
+    needs only an Apache reload.
+  - No `Listen` directive — `curalis.conf` already declares `Listen 443` and a
+    duplicate aborts startup.
+  - Relaxes the global TLS-1.3-only policy to also allow TLS 1.2 for this vhost.
+    That policy exists for Curalis's HIPAA obligation; GarageFlow has none, and
+    1.3-only excludes Android 9 and iOS before 12.2 — phones that customers open
+    DVI links on.
 - **Web build arg:** `NEXT_PUBLIC_API_URL=https://garageflow.studio/api`.
+  Same-origin is mandatory, not stylistic: the API's CORS allowlist is hardcoded
+  to localhost, so a cross-origin `api.garageflow.studio` would break every
+  authenticated request.
+
+### Phase 2a — Security fixes required before exposure
+
+Found while reading the code for the deploy; all are now fixed and verified.
+
+1. **Unauthenticated account takeover.** `POST /auth/magic-link` returned the
+   login code in the response body with no dev/prod gate, and
+   `GenerateMagicLink` validated only the email's *format*. Two unauthenticated
+   requests — magic-link then verify — produced a session for any known address.
+   Fixed with an `AUTH_DEV_CODES` flag (default off); the code is echoed only
+   when explicitly enabled for dev and E2E.
+2. **No rate limiting** on the unauthenticated `/auth/*` endpoints. Added
+   `httprate` at `AUTH_RATE_LIMIT_PER_MIN` (default 10/min per IP, 0 disables).
+   The E2E suite authenticates far faster than any human, so dev sets 0.
+3. **Demo accounts in production.** `002_seed_data.sql` created a shop and three
+   users sharing one bcrypt hash of `password123` — a published password on an
+   `owner` account. Moved to `migrations/seed/`, which `initdb` ignores because
+   it is a subdirectory, so `migrations/*.sql` is now schema only.
+   - `005_inspections.sql` also inserted a default template against the demo
+     shop's hardcoded UUID. Left alone, production's first boot would have hit a
+     foreign-key violation and Postgres would have failed to initialize. That
+     insert moved into the seed file.
+   - The dev stack must **not** mount a seed file into
+     `/docker-entrypoint-initdb.d/` alongside `./migrations`: the target nests
+     inside that bind mount, so Docker creates the file on the host in
+     `./migrations/`, where it would be committed and then executed in
+     production. Dev and E2E apply the seed over psql instead.
+4. **No way to log in to a fresh production database.** With the seed gone and
+   no signup endpoint, production would have had zero users. Added
+   `cmd/createadmin`, built into the API image, which creates a shop, an owner
+   with a generated password, and a default inspection template in one
+   transaction.
 
 ### Phase 3 — Secrets and DNS
 
@@ -145,17 +200,27 @@ New files; `docker-compose.yml` and `infra/Caddyfile` remain the dev setup.
 
 ## Assumptions
 
-Stated so Phase 0 is not blocked. Each must be confirmed before the phase that
-depends on it; all three are Phase 2/3 concerns.
-
 1. **Integrations start in dev/test mode.** The `.env` contains real-looking
    Stripe, Mailgun, and Twilio values. Live Stripe keys mean real charges from a
    demo environment, so the initial deploy uses test keys and the no-key dev
-   senders. Revisit before going live.
+   senders. Still to confirm before Phase 3.
 2. **Postgres runs in-compose**, not Lightsail managed. Simplest on 59GB, and
    backups are handled by the Phase 5 cron rather than by AWS.
-3. **MinIO stays** rather than moving to S3, with a Caddy route so DVI photos are
-   reachable over HTTPS by customers.
+3. ~~MinIO needs an HTTPS route for DVI photos.~~ **Resolved:** the API streams
+   objects itself and never presigns, so MinIO stays internal-only.
+
+## Known limitations
+
+- **WebSockets are not proxied.** The API exposes `/ws`, but the Curalis proxy
+  image does not enable `mod_proxy_wstunnel` and no web client currently
+  connects. Adding live updates means enabling that module and adding an
+  upgrade rule.
+- **No `/healthz` on the GarageFlow API**, so the `api` container has no HTTP
+  healthcheck and uptime monitoring has nothing to poll. Curalis has one; worth
+  matching.
+- **CORS origins are hardcoded** to localhost in `main.go`. Harmless while the
+  browser calls the API same-origin, but it makes an API subdomain impossible
+  without a code change.
 
 ## Out of scope
 

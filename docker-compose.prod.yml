@@ -1,0 +1,124 @@
+# Production stack for garageflow.studio.
+#
+# This box already runs the Curalis stack, whose Apache container (carehaus-proxy-1)
+# owns :80 and :443. GarageFlow therefore ships NO reverse proxy of its own and
+# publishes NO host ports: gf-web and gf-api join the Curalis proxy network so
+# Apache can reach them by container name, and everything else stays on an
+# internal network unreachable from outside the host.
+#
+# Secrets come from .env beside this file (chmod 600, never committed).
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gf-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Schema only. initdb ignores subdirectories, so migrations/seed/ is not
+      # applied here — production must never get the demo shop and its
+      # published-password owner account. Bootstrap real accounts with:
+      #   docker compose -f docker-compose.prod.yml run --rm api /createadmin ...
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 384m
+    restart: unless-stopped
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    container_name: gf-redis
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 96m
+    restart: unless-stopped
+    networks: [internal]
+
+  minio:
+    image: minio/minio:latest
+    container_name: gf-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    restart: unless-stopped
+    # Deliberately internal-only: the API streams objects to clients itself
+    # (storage.Store.Get), so MinIO is never contacted by a browser and needs
+    # no route through Apache.
+    networks: [internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.api
+    container_name: gf-api
+    env_file: .env
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      # AUTH_DEV_CODES is intentionally absent. Setting it would return
+      # magic-link codes in API responses, which is a full auth bypass.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [internal, edge]
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.web
+      args:
+        # Inlined into the bundle at build time, so it must be correct BEFORE
+        # the image is built. Same-origin /api keeps the browser's requests on
+        # garageflow.studio, which matters because the API's CORS allowlist is
+        # localhost-only — a cross-origin api.garageflow.studio would break
+        # every authenticated request.
+        NEXT_PUBLIC_API_URL: https://garageflow.studio/api
+    container_name: gf-web
+    depends_on:
+      - api
+    mem_limit: 512m
+    restart: unless-stopped
+    networks: [edge]
+
+networks:
+  # Private to this stack; no route in from outside the host.
+  internal:
+  # The Curalis compose network, so carehaus-proxy-1 can resolve gf-web/gf-api.
+  edge:
+    external: true
+    name: carehaus_default
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

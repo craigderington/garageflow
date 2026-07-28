@@ -22,6 +22,15 @@ sleep 3
 echo "Running migrations..."
 bash scripts/migrate.sh
 
+# migrations/*.sql is schema only. Demo data lives in migrations/seed/ so that
+# production never gets it; dev and E2E want it, so apply it here. Seeding is
+# idempotent-by-truncate via scripts/db-reset.sh, so ignore a duplicate-key
+# failure when the rows already exist.
+echo "Seeding demo data..."
+for f in migrations/seed/*.sql; do
+  psql "${DATABASE_URL}" -f "$f" -q 2>/dev/null || echo "  (seed already applied, skipping $(basename "$f"))"
+done
+
 echo "Starting API server..."
 cd apps/api-go && go run ./cmd/server &
 API_PID=$!

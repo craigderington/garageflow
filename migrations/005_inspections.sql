@@ -58,25 +58,8 @@ CREATE TABLE inspection_item_photos (
 );
 CREATE INDEX idx_inspection_item_photos_item ON inspection_item_photos(item_id);
 
--- Seed a default "Courtesy Check" template for the demo shop.
-INSERT INTO inspection_templates (shop_id, name, is_default, items) VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'Courtesy Check',
-    true,
-    '[
-        {"section":"Brakes","label":"Front brake pads"},
-        {"section":"Brakes","label":"Rear brake pads"},
-        {"section":"Brakes","label":"Brake fluid"},
-        {"section":"Tires","label":"Front tire tread"},
-        {"section":"Tires","label":"Rear tire tread"},
-        {"section":"Tires","label":"Tire pressure"},
-        {"section":"Fluids","label":"Engine oil level"},
-        {"section":"Fluids","label":"Coolant level"},
-        {"section":"Fluids","label":"Washer fluid"},
-        {"section":"Battery & Electrical","label":"Battery health"},
-        {"section":"Battery & Electrical","label":"Headlights / taillights"},
-        {"section":"Under Hood","label":"Serpentine belt"},
-        {"section":"Under Hood","label":"Air filter"},
-        {"section":"Wipers","label":"Wiper blades"}
-    ]'
-);
+-- NOTE: the default "Courtesy Check" template used to be seeded here against
+-- the demo shop. It moved to migrations/seed/002_seed_data.sql so that
+-- migrations/*.sql stays pure schema and can be applied to a production
+-- database without inserting demo rows. New shops get their own default
+-- template from `createadmin`.
