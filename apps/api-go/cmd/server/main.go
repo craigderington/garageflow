@@ -92,6 +92,10 @@ func main() {
 
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
+	// Order matters: capturePeerIP must run BEFORE RealIP, which overwrites
+	// r.RemoteAddr from client-supplied headers. See ratelimit.go — the demo
+	// and auth limiters key on the peer it stashes, not on the header.
+	r.Use(capturePeerIP)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.RequestID)
 	// NOTE: no global chimw.Timeout. It sets a deadline on the request context,
@@ -118,14 +122,32 @@ func main() {
 
 	r.Route("/demo", func(r chi.Router) {
 		r.Use(chimw.Timeout(requestTimeout))
+		// keyByTrustedIP, not httprate.LimitByIP: LimitByIP keys on
+		// r.RemoteAddr, which chimw.RealIP has already overwritten from
+		// True-Client-IP / X-Real-IP / X-Forwarded-For, so the limit would be
+		// bypassable by rotating one header — on the one endpoint where each
+		// request costs a bcrypt hash, ~25 rows that live 14 days, and an
+		// unauthenticated email to a caller-chosen address.
 		if cfg.DemoRateLimitPerMin > 0 {
-			r.Use(httprate.LimitByIP(cfg.DemoRateLimitPerMin, time.Minute))
+			r.Use(httprate.Limit(cfg.DemoRateLimitPerMin, time.Minute, httprate.WithKeyFuncs(keyByTrustedIP)))
 		}
 		r.Post("/", demoHandler.Start)
 		r.Post("/resume", demoHandler.Resume)
 	})
 
 	go func() {
+		sweep := func() {
+			if n, err := demoSvc.SweepExpired(hubCtx); err != nil {
+				log.Printf("[demo] sweep failed: %v", err)
+			} else if n > 0 {
+				log.Printf("[demo] swept %d expired demo shops", n)
+			}
+		}
+		// Sweep once on boot, before waiting out the first tick. Without this,
+		// a deploy cadence faster than the tick means expired shops are never
+		// collected — every restart resets the timer.
+		sweep()
+
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -133,11 +155,7 @@ func main() {
 			case <-hubCtx.Done():
 				return
 			case <-ticker.C:
-				if n, err := demoSvc.SweepExpired(hubCtx); err != nil {
-					log.Printf("[demo] sweep failed: %v", err)
-				} else if n > 0 {
-					log.Printf("[demo] swept %d expired demo shops", n)
-				}
+				sweep()
 			}
 		}
 	}()
@@ -147,8 +165,9 @@ func main() {
 		// Credential and magic-link endpoints are unauthenticated and are the
 		// obvious brute-force target, so cap attempts per client IP. Disabled
 		// (0) for dev and E2E, which log in far faster than any real client.
+		// Same header-spoofing-resistant key as /demo above.
 		if cfg.AuthRateLimitPerMin > 0 {
-			r.Use(httprate.LimitByIP(cfg.AuthRateLimitPerMin, time.Minute))
+			r.Use(httprate.Limit(cfg.AuthRateLimitPerMin, time.Minute, httprate.WithKeyFuncs(keyByTrustedIP)))
 		}
 
 		r.Post("/magic-link", authHandler.MagicLink)
