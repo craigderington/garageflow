@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { api, ApiError } from "@/lib/api";
 import { Wrench, Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
+import { DemoCapture } from "@/components/DemoCapture";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -126,6 +127,11 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="gf-card mt-6 p-5">
+          <p className="text-sm text-ink-dim mb-3">Just looking? Try a live demo shop.</p>
+          <DemoCapture />
         </div>
 
         <p className="text-center text-xs text-ink-mute mt-6">

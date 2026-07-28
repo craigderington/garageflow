@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { DemoCapture } from "@/components/DemoCapture";
 import {
   Wrench,
   ClipboardList,
@@ -117,6 +118,13 @@ function Hero() {
           <p className="mt-6 text-xs text-ink-mute">
             No credit card · one login for the whole shop
           </p>
+
+          <div className="gf-card mt-8 p-5 max-w-sm">
+            <p className="text-sm text-ink-dim mb-3">
+              Or skip the tour — spin up a live demo shop, no signup required.
+            </p>
+            <DemoCapture />
+          </div>
         </div>
         <div className="relative">
           <div className="absolute -inset-6 hazard opacity-[0.06] rounded-xl" aria-hidden />
