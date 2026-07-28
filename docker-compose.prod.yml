@@ -1,10 +1,17 @@
 # Production stack for garageflow.studio.
 #
-# This box already runs the Curalis stack, whose Apache container (carehaus-proxy-1)
-# owns :80 and :443. GarageFlow therefore ships NO reverse proxy of its own and
-# publishes NO host ports: gf-web and gf-api join the Curalis proxy network so
-# Apache can reach them by container name, and everything else stays on an
-# internal network unreachable from outside the host.
+# Apache runs on the HOST as the reverse proxy: it terminates TLS and routes by
+# Host header into this stack (see infra/apache/garageflow.conf). This stack
+# ships no proxy of its own.
+#
+# Nothing here binds a public interface. web and api publish to 127.0.0.1 only,
+# so they are reachable by host Apache and by nothing else; postgres, redis and
+# minio publish no host port at all.
+#
+# Host ports use a dedicated 283xx block rather than the usual 3000/8080,
+# because this server runs several applications and the common ports collide.
+# They sit below 32768 so they cannot clash with the kernel's ephemeral range.
+# Override per-host with WEB_PORT / API_PORT in .env.
 #
 # Secrets come from .env beside this file (chmod 600, never committed).
 #
@@ -78,11 +85,9 @@ services:
     env_file: .env
     environment:
       PORT: "8080"
-      # Address backends by container name, never by service name. gf-api is
-      # attached to carehaus_default so Apache can reach it, and the Curalis
-      # stack has its own services named `postgres` and `redis` — on that
-      # network those names resolve to Curalis's production containers, not
-      # ours. Container names are unique host-wide, so they cannot collide.
+      # Backends live on this stack's private network and are unreachable from
+      # outside the host. Addressed by container name, which is stable and
+      # unambiguous regardless of what else runs on this server.
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@gf-postgres:5432/${POSTGRES_DB}?sslmode=disable
       REDIS_URL: redis://gf-redis:6379/0
       MINIO_ENDPOINT: gf-minio:9000
@@ -93,9 +98,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Loopback only. Host Apache proxies to this; nothing off-box can reach it.
+    ports:
+      - "127.0.0.1:${API_PORT:-28301}:8080"
     mem_limit: 256m
     restart: unless-stopped
-    networks: [internal, edge]
+    networks: [internal]
 
   web:
     build:
@@ -111,17 +119,16 @@ services:
     container_name: gf-web
     depends_on:
       - api
+    # Loopback only. Host Apache proxies to this; nothing off-box can reach it.
+    ports:
+      - "127.0.0.1:${WEB_PORT:-28300}:3000"
     mem_limit: 512m
     restart: unless-stopped
-    networks: [edge]
+    networks: [internal]
 
 networks:
   # Private to this stack; no route in from outside the host.
   internal:
-  # The Curalis compose network, so carehaus-proxy-1 can resolve gf-web/gf-api.
-  edge:
-    external: true
-    name: carehaus_default
 
 volumes:
   pgdata:
