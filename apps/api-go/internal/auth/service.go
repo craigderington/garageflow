@@ -61,23 +61,25 @@ func (s *Service) GenerateMagicLink(ctx context.Context, email string) (string, 
 func (s *Service) sendMagicLinkEmail(ctx context.Context, email, code string) error {
 	loginURL := fmt.Sprintf("%s/auth/verify?code=%s", s.appURL, url.QueryEscape(code))
 
+	verifyURL := fmt.Sprintf("%s/auth/verify", s.appURL)
+
 	subject := "Your GarageFlow login link"
 	text := fmt.Sprintf(
 		"Sign in to GarageFlow by opening the link below:\n\n%s\n\n"+
-			"Or enter this code in the app:\n\n%s\n\n"+
+			"Or go to %s and enter this code:\n\n%s\n\n"+
 			"This link expires in 15 minutes. If you did not request it, you can ignore this email.\n",
-		loginURL, code,
+		loginURL, verifyURL, code,
 	)
 	html := fmt.Sprintf(
 		`<!DOCTYPE html><html><body style="font-family:Arial,Helvetica,sans-serif;color:#1a1a1a">`+
 			`<h2 style="margin-bottom:8px">Sign in to GarageFlow</h2>`+
 			`<p>Click the button below to sign in:</p>`+
 			`<p><a href="%s" style="display:inline-block;padding:12px 20px;background:#f97316;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Sign in</a></p>`+
-			`<p>Or enter this code in the app:</p>`+
+			`<p>Or go to <a href="%s">%s</a> and enter this code:</p>`+
 			`<p style="font-size:18px;font-weight:bold;letter-spacing:1px">%s</p>`+
 			`<p style="color:#666;font-size:13px">This link expires in 15 minutes. If you did not request it, you can ignore this email.</p>`+
 			`</body></html>`,
-		loginURL, code,
+		loginURL, verifyURL, verifyURL, code,
 	)
 
 	return s.mailer.Send(ctx, email, subject, html, text)

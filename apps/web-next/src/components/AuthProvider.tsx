@@ -36,11 +36,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // The API sets the session cookie on /auth/verify, so this mirrors login():
+  // exchange the code, then read back who we are.
+  const verifyCode = useCallback(async (code: string) => {
+    await api.post("/auth/verify", { code });
+    const data = await api.get<{ user_id: string; shop_id: string; role: string }>("/auth/me");
+    setUser({
+      id: data.user_id,
+      shop_id: data.shop_id,
+      role: data.role as User["role"],
+      email: "",
+      name: "",
+    });
+  }, []);
+
   const logout = useCallback(async () => {
     await api.post("/auth/logout");
     setUser(null);
   }, []);
 
-  const value: AuthContextType = { user, loading, login, logout };
+  const value: AuthContextType = { user, loading, login, verifyCode, logout };
   return <AuthContext value={value}>{children}</AuthContext>;
 }

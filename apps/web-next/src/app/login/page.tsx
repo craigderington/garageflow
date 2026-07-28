@@ -23,8 +23,15 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (mode === "magic") {
-        const res = await api.post<{ code: string }>("/auth/magic-link", { email });
-        setMessage(`Magic link sent! Use code: ${res.code} (dev mode)`);
+        // `code` comes back only when AUTH_DEV_CODES is on (dev and E2E). In
+        // production it is absent, so never interpolate it blindly — this used
+        // to render the literal string "undefined (dev mode)" to real users.
+        const res = await api.post<{ code?: string }>("/auth/magic-link", { email });
+        setMessage(
+          res.code
+            ? `Magic link sent. Dev code: ${res.code}`
+            : "Check your email for a sign-in link. It expires in 15 minutes.",
+        );
       } else {
         await login(email, password);
         router.push("/dashboard");
@@ -122,8 +129,10 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-ink-mute mt-6">
-          Demo: <span className="nums text-ink-dim">owner@garageflow.app</span> /{" "}
-          <span className="nums text-ink-dim">password123</span>
+          Have a sign-in code?{" "}
+          <a href="/auth/verify" className="text-ink-dim hover:text-ink transition-colors">
+            Enter it here
+          </a>
         </p>
       </div>
     </div>
