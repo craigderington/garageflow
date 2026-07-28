@@ -78,9 +78,14 @@ services:
     env_file: .env
     environment:
       PORT: "8080"
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      MINIO_ENDPOINT: minio:9000
+      # Address backends by container name, never by service name. gf-api is
+      # attached to carehaus_default so Apache can reach it, and the Curalis
+      # stack has its own services named `postgres` and `redis` — on that
+      # network those names resolve to Curalis's production containers, not
+      # ours. Container names are unique host-wide, so they cannot collide.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@gf-postgres:5432/${POSTGRES_DB}?sslmode=disable
+      REDIS_URL: redis://gf-redis:6379/0
+      MINIO_ENDPOINT: gf-minio:9000
       # AUTH_DEV_CODES is intentionally absent. Setting it would return
       # magic-link codes in API responses, which is a full auth bypass.
     depends_on:
