@@ -51,10 +51,15 @@ type queryRower interface {
 // session token to sign the caller in immediately and the return token to
 // email so they can come back later.
 func (s *Service) Provision(ctx context.Context, email, ip, userAgent string) (sessionToken, returnToken string, err error) {
-	email = normalizeEmail(email)
-	if _, err := mail.ParseAddress(email); err != nil {
+	// Store the parsed address, not the raw input: mail.ParseAddress accepts
+	// `Prospect <p@example.com>`, and persisting that verbatim would make the
+	// same prospect look like two different leads and put a display name into
+	// the To: header of every email we send them.
+	parsed, err := mail.ParseAddress(strings.TrimSpace(email))
+	if err != nil {
 		return "", "", fmt.Errorf("invalid email")
 	}
+	email = normalizeEmail(parsed.Address)
 
 	shopID, userID, role, returnToken, err := s.provisionOrReuse(ctx, email, ip, userAgent)
 	if err != nil {
@@ -120,7 +125,13 @@ func (s *Service) provisionOrReuse(ctx context.Context, email, ip, userAgent str
 		return sid, uid, r, tok, nil
 	}
 
-	slug := "demo-" + uuid.New().String()[:8]
+	// 16 hex characters (64 bits). 8 was a birthday collision waiting to
+	// surface as a unique-violation on shops.slug for an unlucky prospect.
+	slugSuffix, err := randomHex(8)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("generate slug: %w", err)
+	}
+	slug := "demo-" + slugSuffix
 	if err := tx.QueryRow(ctx,
 		`INSERT INTO shops (name, slug, is_demo, expires_at) VALUES ($1, $2, TRUE, NOW() + $3::interval) RETURNING id`,
 		"Demo Shop", slug, s.ttl.String(),
@@ -132,9 +143,17 @@ func (s *Service) provisionOrReuse(ctx context.Context, email, ip, userAgent str
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("generate password: %w", err)
 	}
+	// The owner row gets a synthetic address, NEVER the prospect's. users is
+	// only UNIQUE(shop_id, email), while auth resolves identity with a bare
+	// `WHERE email = $1`. Storing the submitted address here would let anyone
+	// POST /demo with a real customer's address and plant a second users row
+	// under it — locking that customer out of password login and pointing
+	// their magic link at the attacker's demo shop. The prospect's real
+	// address lives in demo_leads.email and nowhere else.
+	ownerEmail := "owner-" + uuid.New().String() + "@demo.invalid"
 	if err := tx.QueryRow(ctx,
 		`INSERT INTO users (shop_id, email, name, role, password_hash) VALUES ($1, $2, $3, 'owner', $4) RETURNING id`,
-		shopID, email, "Demo Owner", passwordHash,
+		shopID, ownerEmail, "Demo Owner", passwordHash,
 	).Scan(&userID); err != nil {
 		return "", "", "", "", fmt.Errorf("insert owner user: %w", err)
 	}
@@ -194,7 +213,7 @@ func (s *Service) Resume(ctx context.Context, returnToken string) (sessionToken 
 		FROM demo_leads l
 		JOIN shops s ON s.id = l.shop_id
 		JOIN users u ON u.shop_id = s.id AND u.role = 'owner'
-		WHERE l.return_token = $1 AND s.id IS NOT NULL AND s.expires_at > NOW()`, returnToken,
+		WHERE l.return_token = $1 AND s.id IS NOT NULL AND s.is_demo = TRUE AND s.expires_at > NOW()`, returnToken,
 	).Scan(&shopID, &userID, &role)
 	if err != nil {
 		return "", fmt.Errorf("unknown or expired token")
@@ -251,8 +270,11 @@ func randomBcryptHash() (string, error) {
 
 // randomHexToken returns 32 random hex characters from crypto/rand — the
 // credential embedded in the resume link, so it must not be predictable.
-func randomHexToken() (string, error) {
-	buf := make([]byte, 16)
+func randomHexToken() (string, error) { return randomHex(16) }
+
+// randomHex returns 2*n hex characters read from crypto/rand.
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
