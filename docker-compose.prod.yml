@@ -101,6 +101,14 @@ services:
     # Loopback only. Host Apache proxies to this; nothing off-box can reach it.
     ports:
       - "127.0.0.1:${API_PORT:-28301}:8080"
+    # /healthz probes postgres and redis, so this catches a process that is
+    # still accepting connections while its dependencies are dead.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     mem_limit: 256m
     restart: unless-stopped
     networks: [internal]
@@ -118,7 +126,8 @@ services:
         NEXT_PUBLIC_API_URL: https://garageflow.studio/api
     container_name: gf-web
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     # Loopback only. Host Apache proxies to this; nothing off-box can reach it.
     ports:
       - "127.0.0.1:${WEB_PORT:-28300}:3000"

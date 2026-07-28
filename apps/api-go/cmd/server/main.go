@@ -23,6 +23,7 @@ import (
 	"github.com/garageflow/api-go/internal/email"
 	"github.com/garageflow/api-go/internal/estimates"
 	"github.com/garageflow/api-go/internal/events"
+	"github.com/garageflow/api-go/internal/health"
 	"github.com/garageflow/api-go/internal/inspections"
 	"github.com/garageflow/api-go/internal/inventory"
 	"github.com/garageflow/api-go/internal/labor"
@@ -97,6 +98,14 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	// Unauthenticated and deliberately outside chimw.Timeout — the handler
+	// bounds itself, and a monitor must be able to reach this when the app is
+	// too unhealthy to serve anything else.
+	r.Get("/healthz", health.New(
+		health.Check{Name: "postgres", Ping: pool.Ping},
+		health.Check{Name: "redis", Ping: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
+	).ServeHTTP)
 
 	r.Route("/auth", func(r chi.Router) {
 		r.Use(chimw.Timeout(requestTimeout))
