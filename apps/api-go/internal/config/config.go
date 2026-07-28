@@ -17,6 +17,10 @@ type Config struct {
 	// each minute. 0 disables the limiter, which local dev and the E2E suite
 	// need since they authenticate far faster than any real client.
 	AuthRateLimitPerMin int
+	// DemoRateLimitPerMin caps POST /demo per client IP. Lower than the auth
+	// limit because provisioning a shop is far more expensive than a login
+	// attempt. 0 disables the limit, matching AuthRateLimitPerMin.
+	DemoRateLimitPerMin int
 	SMTPHost            string
 	SMTPPort            int
 	SMTPUser            string
@@ -51,6 +55,7 @@ func Load() *Config {
 		SessionSecret:       getEnv("SESSION_SECRET", "dev-secret-change-in-production"),
 		AuthDevCodes:        getEnvBool("AUTH_DEV_CODES", false),
 		AuthRateLimitPerMin: getEnvInt("AUTH_RATE_LIMIT_PER_MIN", 10),
+		DemoRateLimitPerMin: getEnvInt("DEMO_RATE_LIMIT_PER_MIN", 3),
 		SMTPHost:            getEnv("SMTP_HOST", "localhost"),
 		SMTPPort:            getEnvInt("SMTP_PORT", 1025),
 		SMTPUser:            getEnv("SMTP_USER", ""),

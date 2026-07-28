@@ -20,6 +20,7 @@ import (
 	"github.com/garageflow/api-go/internal/config"
 	"github.com/garageflow/api-go/internal/customers"
 	"github.com/garageflow/api-go/internal/db"
+	"github.com/garageflow/api-go/internal/demo"
 	"github.com/garageflow/api-go/internal/email"
 	"github.com/garageflow/api-go/internal/estimates"
 	"github.com/garageflow/api-go/internal/events"
@@ -112,6 +113,35 @@ func main() {
 		health.Check{Name: "redis", Ping: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
 	).ServeHTTP)
 
+	demoSvc := demo.NewService(pool, authSvc, 14*24*time.Hour)
+	demoHandler := demo.NewHandler(demoSvc, mailer, cfg.AppURL)
+
+	r.Route("/demo", func(r chi.Router) {
+		r.Use(chimw.Timeout(requestTimeout))
+		if cfg.DemoRateLimitPerMin > 0 {
+			r.Use(httprate.LimitByIP(cfg.DemoRateLimitPerMin, time.Minute))
+		}
+		r.Post("/", demoHandler.Start)
+		r.Post("/resume", demoHandler.Resume)
+	})
+
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-hubCtx.Done():
+				return
+			case <-ticker.C:
+				if n, err := demoSvc.SweepExpired(hubCtx); err != nil {
+					log.Printf("[demo] sweep failed: %v", err)
+				} else if n > 0 {
+					log.Printf("[demo] swept %d expired demo shops", n)
+				}
+			}
+		}
+	}()
+
 	r.Route("/auth", func(r chi.Router) {
 		r.Use(chimw.Timeout(requestTimeout))
 		// Credential and magic-link endpoints are unauthenticated and are the
@@ -147,7 +177,13 @@ func main() {
 	} else {
 		log.Printf("sms: twilio not configured, using no-op log sender")
 	}
-	inspHandler := inspections.NewHandler(pool, store, smsSender, mailer, cfg.AppURL)
+
+	// Demo tenants must never send to a real phone or inbox. Wrap once, here,
+	// so no future handler can accidentally take the unguarded sender.
+	guardedSMS := demo.GuardSMS(smsSender, pool)
+	guardedMailer := demo.GuardEmail(mailer, pool)
+
+	inspHandler := inspections.NewHandler(pool, store, guardedSMS, guardedMailer, cfg.AppURL)
 
 	// Stripe webhook is unauthenticated (verified by signature instead).
 	r.With(chimw.Timeout(requestTimeout)).Post("/webhooks/stripe", estHandler.Webhook)
