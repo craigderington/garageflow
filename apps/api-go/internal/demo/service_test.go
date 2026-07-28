@@ -3,14 +3,24 @@ package demo
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
 
-type fakeSessions struct{ issued int }
+// issued is accessed from multiple goroutines by
+// TestProvisionIsRaceSafeForConcurrentCalls, so it's guarded rather than
+// left a plain field — otherwise -race reports a false positive on the
+// counter itself instead of (or in addition to) any real bug.
+type fakeSessions struct {
+	mu     sync.Mutex
+	issued int
+}
 
 func (f *fakeSessions) IssueSession(_ context.Context, userID, shopID, role string) (string, error) {
+	f.mu.Lock()
 	f.issued++
+	f.mu.Unlock()
 	return fmt.Sprintf("session-for-%s", userID), nil
 }
 
@@ -246,5 +256,66 @@ func TestProvisionAfterExpiryCreatesNewShop(t *testing.T) {
 	}
 	if shopID == nil {
 		t.Error("lead has no shop after re-provisioning")
+	}
+}
+
+// Two concurrent Provision calls for the same not-yet-provisioned email must
+// not race into creating two shops: the loser should find and reuse the
+// winner's shop rather than create its own and have the demo_leads upsert
+// silently overwrite whichever committed last, orphaning the other shop and
+// stranding its return_token.
+func TestProvisionIsRaceSafeForConcurrentCalls(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+	email := fmt.Sprintf("concurrent-%d@example.com", time.Now().UnixNano())
+	cleanupLead(t, svc, email)
+
+	const n = 8
+	returnTokens := make([]string, n)
+	errs := make([]error, n)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, tok, err := svc.Provision(ctx, email, "1.2.3.4", "concurrent-test")
+			returnTokens[i] = tok
+			errs[i] = err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("Provision[%d]: %v", i, err)
+		}
+	}
+
+	var shops int
+	if err := svc.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM shops s JOIN demo_leads l ON l.shop_id = s.id WHERE l.email = $1`, email,
+	).Scan(&shops); err != nil {
+		t.Fatalf("count shops: %v", err)
+	}
+	if shops != 1 {
+		t.Errorf("shops = %d, want exactly 1 despite %d concurrent Provision calls", shops, n)
+	}
+
+	distinct := map[string]bool{}
+	for i, tok := range returnTokens {
+		if tok == "" {
+			t.Fatalf("Provision[%d]: empty return token", i)
+		}
+		distinct[tok] = true
+		if _, err := svc.Resume(ctx, tok); err != nil {
+			t.Errorf("Resume(return token from call %d): %v — orphaned or rolled-back shop", i, err)
+		}
+	}
+	if len(distinct) != 1 {
+		t.Errorf("saw %d distinct return tokens across %d concurrent calls, want 1", len(distinct), n)
 	}
 }
