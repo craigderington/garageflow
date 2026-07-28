@@ -1,11 +1,11 @@
-import { test, expect } from "./helpers/fixtures";
+import { test, expect, gotoReady } from "./helpers/fixtures";
 import { API_URL, uniq } from "./helpers/api";
 
 const demoEmail = () => `demo-${uniq()}@example.com`;
 
 test.describe("demo tenant", () => {
   test("email capture lands on a populated dashboard", async ({ page }) => {
-    await page.goto("/login");
+    await gotoReady(page, "/login");
     await page.getByTestId("demo-email").fill(demoEmail());
     await page.getByTestId("demo-submit").click();
 
@@ -58,8 +58,17 @@ test.describe("demo tenant", () => {
     await expect(page.getByText(/expired/i)).toBeVisible();
   });
 
-  // The guard that stops a prospect texting a stranger.
-  test("a demo shop sends nothing outbound but still shows link and QR", async ({ page }) => {
+  // This test proves the DVI send flow still works end-to-end for a demo
+  // tenant and hands the tech a usable customer link and QR — it does NOT
+  // assert that outbound SMS/email is actually suppressed. There is no
+  // Twilio/Mailgun sandbox or test outbox in this stack to observe a
+  // non-send against, so that guarantee is covered at the Go level instead:
+  // apps/api-go/internal/inspections/delivery_test.go
+  //   - TestSendSuppressesForDemoShopThroughAsyncPath (demo shop: suppressed)
+  //   - TestSendDeliversToRealShopThroughAsyncPath (real shop: positive control)
+  // Do not delete those as "redundant" with this spec — they are the only
+  // coverage of the suppression guarantee itself.
+  test("a demo shop's inspection send flow works and produces a usable link and QR", async ({ page }) => {
     // Provision via page.request (not the standalone `request` fixture) so the
     // session cookie lands in this test's browser context — the plain `request`
     // fixture is a separate APIRequestContext with its own cookie jar and would
