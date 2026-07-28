@@ -76,6 +76,24 @@ test.describe("digital vehicle inspection", () => {
     await expect(app.getByText(/customer link/i)).toBeVisible();
   });
 
+  // SMS delivery depends on a carrier approval the shop does not control, so
+  // the report has to be handable to a customer standing at the counter.
+  test("tech UI: the sent report offers a scannable QR code", async ({ app, api }) => {
+    const { ro } = await makeRO(api, `InspQR ${uniq()}`);
+    const insp = await (await api.post(`/repair-orders/${ro.id}/inspection`)).json();
+    await api.post(`/inspections/${insp.id}/send`);
+
+    await gotoReady(app, `/inspections/${insp.id}`);
+    await expect(app.getByTestId("customer-link")).toBeVisible();
+
+    await app.getByTestId("toggle-qr").click();
+
+    const qr = app.getByTestId("qr-image");
+    await expect(qr).toBeVisible();
+    // A rendered QR, not a broken image: the src must be a real data URL.
+    await expect(qr).toHaveAttribute("src", /^data:image\/png;base64,/);
+  });
+
   test("customer UI: open public report and approve work", async ({ page, api }) => {
     const { ro } = await makeRO(api, `InspCust ${uniq()}`);
     const insp = await (await api.post(`/repair-orders/${ro.id}/inspection`)).json();

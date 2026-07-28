@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { ArrowLeft, Camera, Send, Check, AlertTriangle, CircleAlert, Loader2, Copy, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Send, Check, AlertTriangle, CircleAlert, Loader2, Copy, QrCode, Trash2 } from "lucide-react";
 
 type Photo = { id: string; filename: string; content_type: string };
 type Item = {
@@ -39,6 +39,25 @@ export default function InspectionEditor() {
   const urlsRef = useRef<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [publicUrl, setPublicUrl] = useState("");
+  const [showQr, setShowQr] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  // Generated on demand rather than on every load: qrcode is a chunky import
+  // and most visits to this page never open the QR.
+  useEffect(() => {
+    if (!showQr || !publicUrl) return;
+    let stale = false;
+    import("qrcode")
+      .then((qr) => qr.toDataURL(publicUrl, { width: 384, margin: 1 }))
+      .then((url) => {
+        if (!stale) setQrDataUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [showQr, publicUrl]);
 
   const load = useCallback(async () => {
     const data = await api.get<Inspection>(`/inspections/${id}`).catch(() => null);
@@ -126,14 +145,52 @@ export default function InspectionEditor() {
       </div>
 
       {publicUrl && (
-        <div className="gf-card p-4 flex items-center gap-3 border-amber/30">
-          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="text-sm text-ink-dim flex-1 truncate">
-            Customer link: <span className="text-ink nums">{publicUrl}</span>
-          </span>
-          <button onClick={() => navigator.clipboard?.writeText(publicUrl)} className="gf-btn-ghost text-xs px-2.5 py-1.5">
-            <Copy className="w-3.5 h-3.5" /> Copy
-          </button>
+        <div className="gf-card p-4 border-amber/30" data-testid="customer-link">
+          <div className="flex items-center gap-3">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-sm text-ink-dim flex-1 truncate">
+              Customer link: <span className="text-ink nums">{publicUrl}</span>
+            </span>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(publicUrl);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="gf-btn-ghost text-xs px-2.5 py-1.5"
+            >
+              <Copy className="w-3.5 h-3.5" /> {copied ? "Copied" : "Copy"}
+            </button>
+            <button
+              onClick={() => setShowQr((v) => !v)}
+              className="gf-btn-ghost text-xs px-2.5 py-1.5"
+              data-testid="toggle-qr"
+            >
+              <QrCode className="w-3.5 h-3.5" /> {showQr ? "Hide" : "QR"}
+            </button>
+          </div>
+
+          {/* Hand the phone the report without depending on a carrier: the
+              customer scans at the counter. SMS delivery is an upgrade on this,
+              not a prerequisite for it. */}
+          {showQr && (
+            <div className="mt-4 pt-4 border-t border-line flex flex-col items-center gap-2">
+              {qrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={qrDataUrl}
+                  alt="QR code for the customer inspection report"
+                  width={192}
+                  height={192}
+                  className="rounded-md bg-white p-2"
+                  data-testid="qr-image"
+                />
+              ) : (
+                <Loader2 className="w-4 h-4 animate-spin text-ink-mute" />
+              )}
+              <p className="text-xs text-ink-mute">Have the customer scan this to open their report</p>
+            </div>
+          )}
         </div>
       )}
 
