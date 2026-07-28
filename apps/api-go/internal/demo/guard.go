@@ -13,8 +13,12 @@ import (
 
 // IsDemoShop reports whether the request's tenant is a demo shop. It fails
 // CLOSED: no shop in context, or any lookup error, counts as a demo. A demo
-// tenant that leaks a real text is worse than a real tenant that drops one, and
-// every genuine send path runs behind TenantMiddleware and so has a shop.
+// tenant that leaks a real text is worse than a real tenant that drops one.
+// Most genuine send paths run behind TenantMiddleware and so have a shop, but
+// not all: a handler that dispatches delivery on a detached goroutine (a new
+// context.Background(), not the request context) must explicitly re-inject
+// the shop ID with middleware.WithShopID before sending, or this fails closed
+// and silently suppresses the send for that shop too.
 func IsDemoShop(ctx context.Context, pool *pgxpool.Pool) bool {
 	shopID := middleware.GetShopID(ctx)
 	if shopID == "" {

@@ -404,14 +404,21 @@ func (h *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		 FROM repair_orders ro JOIN customers c ON c.id = ro.customer_id WHERE ro.id=$1`, roID).Scan(&phone, &custEmail, &name)
 
 	link := strings.TrimRight(h.appURL, "/") + "/inspect/" + token
-	go h.deliver(phone, custEmail, name, link)
+	go h.deliver(shopID, phone, custEmail, name, link)
 
 	json.NewEncoder(w).Encode(map[string]string{"public_token": token, "url": link})
 }
 
-func (h *Handler) deliver(phone, custEmail, name, link string) {
+// deliver runs on its own detached goroutine (see Send), so it cannot reuse
+// the request context — that context is cancelled as soon as Send returns,
+// which would abort delivery mid-flight. shopID is captured from the request
+// context before that happens and re-injected here so the demo guard, which
+// keys off middleware.GetShopID, still sees the right tenant instead of
+// failing closed and suppressing delivery for every shop, demo or not.
+func (h *Handler) deliver(shopID, phone, custEmail, name, link string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	ctx = middleware.WithShopID(ctx, shopID)
 	if phone != "" {
 		_ = h.sms.Send(ctx, phone, "Your vehicle inspection is ready: "+link)
 	}
