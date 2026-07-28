@@ -120,13 +120,14 @@ kernel's ephemeral range, and are overridable via `WEB_PORT` / `API_PORT`.
   - Mounts `./migrations` (schema) but **not** `migrations/seed/`.
 - **`infra/apache/garageflow.conf`** — installed to
   `/etc/apache2/sites-available/garageflow.studio.conf` and enabled with
-  `a2ensite`. Needs `ssl proxy proxy_http proxy_wstunnel headers rewrite`.
+  `a2ensite`. Needs `ssl proxy proxy_http headers rewrite`.
   - `ProxyPass` to `127.0.0.1`. Loopback literals always resolve at config-parse
     time, so a stopped backend yields a 502 on this vhost rather than blocking
     Apache from starting.
-  - `/api/ws` → `ws://127.0.0.1:28301/ws` via `mod_proxy_wstunnel`, declared
-    **before** the `/api/` rule — `ProxyPass` matches in order, and an upgrade
-    handshake proxied as plain HTTP fails.
+  - `/api/events` → `127.0.0.1:28301/events` with `timeout=3600` and `no-gzip`,
+    declared **before** the general `/api/` rule since `ProxyPass` matches in
+    order. This is Server-Sent Events over ordinary HTTP, not a WebSocket, so
+    `mod_proxy_wstunnel` is not involved.
   - `/api/*` → `127.0.0.1:28301` with the prefix stripped, matching the dev
     Caddyfile's `handle_path`. Everything else → `127.0.0.1:28300`.
   - Certificates referenced directly from `/etc/letsencrypt/live/`, so renewal

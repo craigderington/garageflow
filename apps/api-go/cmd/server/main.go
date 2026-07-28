@@ -38,6 +38,10 @@ import (
 	"github.com/garageflow/api-go/internal/vehicles"
 )
 
+// requestTimeout bounds ordinary request handling. Applied per route group
+// rather than globally, because the SSE stream at /events must not inherit it.
+const requestTimeout = 30 * time.Second
+
 func main() {
 	godotenv.Load()
 	cfg := config.Load()
@@ -83,7 +87,9 @@ func main() {
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.Timeout(30 * time.Second))
+	// NOTE: no global chimw.Timeout. It sets a deadline on the request context,
+	// which would cancel the SSE stream at /events after 30s. Applied per route
+	// group below instead, so everything except the stream still gets it.
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173"},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
@@ -93,6 +99,7 @@ func main() {
 	}))
 
 	r.Route("/auth", func(r chi.Router) {
+		r.Use(chimw.Timeout(requestTimeout))
 		// Credential and magic-link endpoints are unauthenticated and are the
 		// obvious brute-force target, so cap attempts per client IP. Disabled
 		// (0) for dev and E2E, which log in far faster than any real client.
@@ -129,10 +136,11 @@ func main() {
 	inspHandler := inspections.NewHandler(pool, store, smsSender, mailer, cfg.AppURL)
 
 	// Stripe webhook is unauthenticated (verified by signature instead).
-	r.Post("/webhooks/stripe", estHandler.Webhook)
+	r.With(chimw.Timeout(requestTimeout)).Post("/webhooks/stripe", estHandler.Webhook)
 
 	// Public, token-authorized inspection report (no login).
 	r.Route("/public/inspections/{token}", func(r chi.Router) {
+		r.Use(chimw.Timeout(requestTimeout))
 		r.Get("/", inspHandler.Report)
 		r.Get("/photos/{photo_id}", inspHandler.ReportPhoto)
 		r.Post("/approve", inspHandler.Approve)
@@ -141,6 +149,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AuthMiddleware(authSvc))
 		r.Use(middleware.TenantMiddleware)
+		r.Use(chimw.Timeout(requestTimeout))
 
 		roHandler := repairorders.NewHandler(pool, bus)
 		r.Route("/repair-orders", func(r chi.Router) {
@@ -228,13 +237,26 @@ func main() {
 		})
 	})
 
-	r.Get("/ws", hub.ServeWS)
+	// Server-Sent Events. Authenticated and tenant-scoped like the group above,
+	// but deliberately without chimw.Timeout: a stream is meant to stay open,
+	// and a request deadline would cut it off mid-flight. The handler clears the
+	// server's WriteTimeout for the same reason.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.AuthMiddleware(authSvc))
+		r.Use(middleware.TenantMiddleware)
+
+		r.Get("/events", hub.ServeEvents)
+	})
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        ":" + cfg.Port,
+		Handler:     r,
+		ReadTimeout: 15 * time.Second,
+		// WriteTimeout stays off: it cannot be cleared per-request for streams
+		// in a way that works across all response wrappers, and the SSE handler
+		// needs an unbounded write window. ReadTimeout and IdleTimeout still
+		// bound slow-loris style connections.
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 
