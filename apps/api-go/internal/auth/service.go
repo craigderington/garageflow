@@ -103,13 +103,19 @@ func (s *Service) VerifyMagicLink(ctx context.Context, code string) (string, err
 		return "", fmt.Errorf("user not found")
 	}
 
+	return s.IssueSession(ctx, userID, shopID, role)
+}
+
+// IssueSession stores a session for an already-authenticated user and returns
+// its opaque token. Kept in one place so every sign-in path — password, magic
+// link, demo — produces an identical session shape.
+func (s *Service) IssueSession(ctx context.Context, userID, shopID, role string) (string, error) {
 	sessionToken := uuid.New().String()
 	sessionKey := fmt.Sprintf("session:%s", sessionToken)
 	sessionData := fmt.Sprintf(`{"uid":"%s","sid":"%s","role":"%s"}`, userID, shopID, role)
 	if err := s.rdb.Set(ctx, sessionKey, sessionData, 24*time.Hour).Err(); err != nil {
 		return "", fmt.Errorf("create session: %w", err)
 	}
-
 	return sessionToken, nil
 }
 
