@@ -65,7 +65,12 @@ func main() {
 	log.Println("connected to redis")
 
 	bus := events.NewBus(rdb)
+
+	// Long-lived, unlike the startup ctx above which carries a 10s deadline.
 	hub := realtime.NewHub()
+	hubCtx, hubCancel := context.WithCancel(context.Background())
+	defer hubCancel()
+	hub.SubscribeShopEvents(hubCtx, rdb)
 
 	var mailer email.Sender
 	if cfg.MailgunAPIKey != "" && cfg.MailgunDomain != "" {

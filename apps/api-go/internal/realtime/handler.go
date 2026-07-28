@@ -1,12 +1,16 @@
 package realtime
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
+	"github.com/garageflow/api-go/internal/events"
 	"github.com/garageflow/api-go/internal/middleware"
 )
 
@@ -66,6 +70,37 @@ func (h *Hub) Publish(room string, data []byte) {
 // var, not const, so tests can shorten it.
 var heartbeatInterval = 20 * time.Second
 
+// roomFor is the single definition of a shop's room name, so the subscriber and
+// the publisher cannot drift apart.
+func roomFor(shopID string) string { return "shop:" + shopID }
+
+// SubscribeShopEvents bridges Redis pub/sub into this instance's hub, so an
+// event published by any API instance reaches every client connected to any of
+// them. Returns once the subscription is established; it runs until ctx is done.
+func (h *Hub) SubscribeShopEvents(ctx context.Context, rdb *redis.Client) {
+	pubsub := rdb.PSubscribe(ctx, events.RealtimeChannelPattern())
+
+	go func() {
+		defer pubsub.Close()
+		ch := pubsub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				shopID := events.ShopFromRealtimeChannel(msg.Channel)
+				if shopID == "" {
+					continue
+				}
+				h.Publish(roomFor(shopID), []byte(msg.Payload))
+			}
+		}
+	}()
+}
+
 // ServeEvents streams shop-scoped events to the caller as Server-Sent Events.
 //
 // Despite the historical /ws path this is not a WebSocket: there is no upgrade
@@ -78,7 +113,7 @@ func (h *Hub) ServeEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	room := "shop:" + shopID
+	room := roomFor(shopID)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
