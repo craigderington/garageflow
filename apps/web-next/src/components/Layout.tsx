@@ -12,7 +12,7 @@ import {
   FileText,
   Package,
   Wrench,
-  CalendarDays,
+  Warehouse,
   LogOut,
   Menu,
 } from "lucide-react";
@@ -20,13 +20,13 @@ import { useState } from "react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/schedule", label: "Bays & Schedule", icon: Warehouse },
   { href: "/repair-orders", label: "Repair Orders", icon: ClipboardList },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/vehicles", label: "Vehicles", icon: Car },
   { href: "/estimates", label: "Estimates", icon: FileText },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/labor", label: "Labor", icon: Wrench },
-  { href: "/schedule", label: "Schedule", icon: CalendarDays },
 ];
 
 function Logo({ size = "base" }: { size?: "base" | "sm" }) {

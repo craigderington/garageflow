@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,40 @@ func Seed(ctx context.Context, tx pgx.Tx, shopID string) error {
 	}
 	if err := seedInspection(ctx, tx, shopID, roIDs[0]); err != nil {
 		return err
+	}
+	if err := seedBays(ctx, tx, shopID, roIDs[0]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func seedBays(ctx context.Context, tx pgx.Tx, shopID string, inProgressRoID string) error {
+	bayNames := []string{
+		"Bay 1 - Quick Service",
+		"Bay 2 - Main Lift",
+		"Bay 3 - Alignment & Tires",
+		"Bay 4 - Heavy Repair",
+	}
+
+	bayIDs := make([]string, 0, len(bayNames))
+	for _, name := range bayNames {
+		id := uuid.New().String()
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO bays (id, shop_id, name, active) VALUES ($1,$2,$3,$4)`,
+			id, shopID, name, true); err != nil {
+			return fmt.Errorf("seed bay: %w", err)
+		}
+		bayIDs = append(bayIDs, id)
+	}
+
+	if inProgressRoID != "" && len(bayIDs) > 1 {
+		now := time.Now()
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO schedules (id, shop_id, bay_id, repair_order_id, start_time, end_time, created_at)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			uuid.New().String(), shopID, bayIDs[1], inProgressRoID, now, now.Add(2*time.Hour), now); err != nil {
+			return fmt.Errorf("seed schedule: %w", err)
+		}
 	}
 	return nil
 }

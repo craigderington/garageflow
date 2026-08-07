@@ -51,8 +51,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await api.post("/auth/logout");
-    setUser(null);
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // ignore
+    } finally {
+      setUser(null);
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
   }, []);
 
   const value: AuthContextType = { user, loading, login, verifyCode, logout };

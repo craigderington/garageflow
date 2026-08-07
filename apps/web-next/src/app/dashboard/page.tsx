@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { RepairOrder, InventoryPart, Customer } from "@/lib/types";
+import type { RepairOrder, InventoryPart, Customer, Bay, Schedule } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { StatCard } from "@/components/ui/StatCard";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Wrench, Clock, Car, AlertTriangle, ArrowRight } from "lucide-react";
+import { Wrench, Clock, Car, AlertTriangle, ArrowRight, Warehouse, Zap } from "lucide-react";
 
 function dotForStatus(status: string) {
   if (["created", "diagnosed", "estimate_sent"].includes(status)) return "bg-amber-400";
@@ -23,6 +23,8 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [inventory, setInventory] = useState<InventoryPart[]>([]);
   const [customers, setCustomers] = useState<Map<string, string>>(new Map());
+  const [bays, setBays] = useState<Bay[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -31,6 +33,8 @@ export default function DashboardPage() {
   useEffect(() => {
     api.get<RepairOrder[]>("/repair-orders").then(setOrders).catch(() => {});
     api.get<InventoryPart[]>("/inventory").then(setInventory).catch(() => {});
+    api.get<Bay[]>("/schedule/bays").then(setBays).catch(() => {});
+    api.get<Schedule[]>("/schedule").then(setSchedules).catch(() => {});
     api
       .get<Customer[]>("/customers")
       .then((cs) => {
@@ -54,29 +58,33 @@ export default function DashboardPage() {
   );
   const lowStock = inventory.filter((p) => p.stock_level <= p.min_stock);
 
+  const activeBays = bays.filter((b) => b.active);
+  const occupiedBayCount = new Set(schedules.map((s) => s.bay_id)).size;
+  const idleBays = Math.max(0, activeBays.length - occupiedBayCount);
+  const utilization = activeBays.length > 0 ? Math.round((occupiedBayCount / activeBays.length) * 100) : 0;
+
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <span className="h-9 w-1 rounded-full bg-amber shadow-[0_0_12px_-2px_var(--color-amber)]" />
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink">
-            Good {new Date().getHours() < 12 ? "morning" : "afternoon"}
-          </h1>
-          <p className="text-sm text-ink-dim mt-0.5">Here&apos;s what&apos;s happening on the floor today</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="h-9 w-1 rounded-full bg-amber shadow-[0_0_12px_-2px_var(--color-amber)]" />
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-ink">
+              Good {new Date().getHours() < 12 ? "morning" : "afternoon"}
+            </h1>
+            <p className="text-sm text-ink-dim mt-0.5">Here&apos;s what&apos;s happening on the floor today</p>
+          </div>
         </div>
+        <a href="/schedule" className="gf-btn-primary flex items-center gap-2">
+          <Warehouse className="w-4 h-4" /> Shop Floor & Bays
+        </a>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Bay Utilization" value={`${utilization}%`} icon={<Zap className="w-5 h-5" />} color="amber" sub={`${occupiedBayCount}/${activeBays.length} Bays Occupied (${idleBays} Idle)`} />
         <StatCard label="In Service" value={inService.length} icon={<Wrench className="w-5 h-5" />} color="blue" />
         <StatCard label="Awaiting Service" value={awaitingService.length} icon={<Clock className="w-5 h-5" />} color="amber" />
         <StatCard label="Completed Today" value={completedToday.length} icon={<Car className="w-5 h-5" />} color="emerald" />
-        <StatCard
-          label="Low Stock Items"
-          value={lowStock.length}
-          icon={<AlertTriangle className="w-5 h-5" />}
-          color="rose"
-          sub={lowStock.slice(0, 3).map((p) => p.name).join(", ")}
-        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

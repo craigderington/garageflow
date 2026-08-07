@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -12,10 +13,10 @@ import (
 )
 
 type Bay struct {
-	ID        string  `json:"id"`
-	ShopID    string  `json:"shop_id"`
-	Name      string  `json:"name"`
-	Active    bool    `json:"active"`
+	ID     string `json:"id"`
+	ShopID string `json:"shop_id"`
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
 }
 
 type Schedule struct {
@@ -94,6 +95,21 @@ func (h *Handler) CreateBay(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(b)
 }
 
+func (h *Handler) DeleteBay(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	_, err := h.db.Exec(r.Context(),
+		`DELETE FROM bays WHERE shop_id = $1 AND id = $2`, shopID, id)
+	if err != nil {
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
 type createScheduleRequest struct {
 	BayID         string `json:"bay_id"`
 	RepairOrderID string `json:"repair_order_id"`
@@ -151,8 +167,6 @@ func (h *Handler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     time.Now(),
 	}
 
-	// technician_id is an optional UUID FK; insert NULL rather than an empty
-	// string (which is not a valid uuid) when no technician is assigned.
 	var technician interface{}
 	if req.TechnicianID != "" {
 		technician = req.TechnicianID
@@ -170,3 +184,102 @@ func (h *Handler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(s)
 }
+
+type assignRequest struct {
+	BayID         string `json:"bay_id"`
+	RepairOrderID string `json:"repair_order_id"`
+	TechnicianID  string `json:"technician_id,omitempty"`
+}
+
+func (h *Handler) AssignRO(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+
+	var req assignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.BayID == "" || req.RepairOrderID == "" {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Remove any existing schedule for this RO to prevent duplicate bay occupancy
+	_, _ = h.db.Exec(r.Context(),
+		`DELETE FROM schedules WHERE shop_id = $1 AND repair_order_id = $2`,
+		shopID, req.RepairOrderID)
+
+	var technician interface{}
+	if req.TechnicianID != "" {
+		technician = req.TechnicianID
+	}
+
+	now := time.Now()
+	endTime := now.Add(2 * time.Hour)
+
+	s := Schedule{
+		ID:            uuid.New().String(),
+		ShopID:        shopID,
+		BayID:         req.BayID,
+		RepairOrderID: req.RepairOrderID,
+		TechnicianID:  req.TechnicianID,
+		StartTime:     now,
+		EndTime:       endTime,
+		CreatedAt:     now,
+	}
+
+	_, err := h.db.Exec(r.Context(),
+		`INSERT INTO schedules (id, shop_id, bay_id, repair_order_id, technician_id, start_time, end_time, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		s.ID, s.ShopID, s.BayID, s.RepairOrderID, technician, s.StartTime, s.EndTime, s.CreatedAt)
+	if err != nil {
+		http.Error(w, `{"error":"assign failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Progress status to in_progress if currently created, diagnosed, or approved
+	_, _ = h.db.Exec(r.Context(),
+		`UPDATE repair_orders SET status = 'in_progress', updated_at = NOW()
+		 WHERE shop_id = $1 AND id = $2 AND status IN ('created', 'diagnosed', 'approved')`,
+		shopID, req.RepairOrderID)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(s)
+}
+
+type unassignRequest struct {
+	RepairOrderID string `json:"repair_order_id"`
+}
+
+func (h *Handler) UnassignRO(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+
+	var req unassignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RepairOrderID == "" {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	_, err := h.db.Exec(r.Context(),
+		`DELETE FROM schedules WHERE shop_id = $1 AND repair_order_id = $2`,
+		shopID, req.RepairOrderID)
+	if err != nil {
+		http.Error(w, `{"error":"unassign failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "unassigned"})
+}
+
+func (h *Handler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	_, err := h.db.Exec(r.Context(),
+		`DELETE FROM schedules WHERE shop_id = $1 AND id = $2`, shopID, id)
+	if err != nil {
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+

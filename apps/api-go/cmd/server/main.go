@@ -299,8 +299,12 @@ func main() {
 		r.Route("/schedule", func(r chi.Router) {
 			r.Get("/bays", schedHandler.ListBays)
 			r.Post("/bays", schedHandler.CreateBay)
+			r.Delete("/bays/{id}", schedHandler.DeleteBay)
 			r.Get("/", schedHandler.ListSchedules)
 			r.Post("/", schedHandler.CreateSchedule)
+			r.Post("/assign", schedHandler.AssignRO)
+			r.Post("/unassign", schedHandler.UnassignRO)
+			r.Delete("/{id}", schedHandler.DeleteSchedule)
 		})
 
 		portalHandler := portal.NewHandler(pool)
