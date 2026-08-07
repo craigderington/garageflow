@@ -300,3 +300,78 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(map[string]bool{"received": true})
 }
+
+type updateEstimateRequest struct {
+	Status *string             `json:"status,omitempty"`
+	Items  []estimateItemInput `json:"items,omitempty"`
+}
+
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req updateEstimateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"transaction failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	if req.Status != nil {
+		_, err := tx.Exec(r.Context(),
+			`UPDATE estimates SET status = $1, updated_at = NOW() WHERE id = $2 AND shop_id = $3`,
+			*req.Status, id, shopID)
+		if err != nil {
+			http.Error(w, `{"error":"update status failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if req.Items != nil {
+		var total float64
+		for _, item := range req.Items {
+			total += item.Quantity * item.UnitPrice
+		}
+
+		_, err := tx.Exec(r.Context(),
+			`UPDATE estimates SET total = $1, updated_at = NOW() WHERE id = $2 AND shop_id = $3`,
+			total, id, shopID)
+		if err != nil {
+			http.Error(w, `{"error":"update total failed"}`, http.StatusInternalServerError)
+			return
+		}
+
+		_, err = tx.Exec(r.Context(), `DELETE FROM estimate_items WHERE estimate_id = $1`, id)
+		if err != nil {
+			http.Error(w, `{"error":"clear items failed"}`, http.StatusInternalServerError)
+			return
+		}
+
+		for _, item := range req.Items {
+			itemID := uuid.New().String()
+			itemTotal := item.Quantity * item.UnitPrice
+			_, err = tx.Exec(r.Context(),
+				`INSERT INTO estimate_items (id, estimate_id, type, description, quantity, unit_price, total)
+				 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+				itemID, id, item.Type, item.Description, item.Quantity, item.UnitPrice, itemTotal)
+			if err != nil {
+				http.Error(w, `{"error":"insert item failed"}`, http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		http.Error(w, `{"error":"commit failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}

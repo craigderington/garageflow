@@ -12,13 +12,15 @@ const (
 )
 
 type User struct {
-	ID        string    `json:"id"`
-	ShopID    string    `json:"shop_id"`
-	Email     string    `json:"email"`
-	Role      Role      `json:"role"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	ShopID       string    `json:"shop_id"`
+	Email        string    `json:"email"`
+	Role         Role      `json:"role"`
+	Name         string    `json:"name"`
+	Specialities string    `json:"specialities"`
+	HourlyRate   float64   `json:"hourly_rate"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Customer struct {

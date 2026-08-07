@@ -80,11 +80,12 @@ export default function DashboardPage() {
         </a>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Bay Utilization" value={`${utilization}%`} icon={<Zap className="w-5 h-5" />} color="amber" sub={`${occupiedBayCount}/${activeBays.length} Bays Occupied (${idleBays} Idle)`} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard label="Bay Utilization" value={`${utilization}%`} icon={<Zap className="w-5 h-5" />} color="amber" sub={`${occupiedBayCount}/${activeBays.length} Bays (${idleBays} Idle)`} />
         <StatCard label="In Service" value={inService.length} icon={<Wrench className="w-5 h-5" />} color="blue" />
         <StatCard label="Awaiting Service" value={awaitingService.length} icon={<Clock className="w-5 h-5" />} color="amber" />
         <StatCard label="Completed Today" value={completedToday.length} icon={<Car className="w-5 h-5" />} color="emerald" />
+        <StatCard label="Low Stock Items" value={lowStock.length} icon={<AlertTriangle className="w-5 h-5" />} color="rose" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

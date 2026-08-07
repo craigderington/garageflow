@@ -219,7 +219,18 @@ export default function RepairOrdersPage() {
                       {ro.description || "View order"}
                     </Link>
                   </td>
-                  <td className="px-5 py-3.5 text-sm text-ink-dim">{customerMap.get(ro.customer_id) || "—"}</td>
+                  <td className="px-5 py-3.5 text-sm">
+                    {ro.customer_id ? (
+                      <Link
+                        href={`/customers/${ro.customer_id}`}
+                        className="font-bold text-amber hover:underline hover:text-amber-bright transition-colors"
+                      >
+                        {customerMap.get(ro.customer_id) || "View Customer"}
+                      </Link>
+                    ) : (
+                      <span className="text-ink-mute">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5 text-sm text-ink-dim nums">{ro.mileage.toLocaleString()}</td>
                   <td className="px-5 py-3.5 text-sm text-ink-mute nums">{new Date(ro.updated_at).toLocaleDateString()}</td>
                 </tr>

@@ -16,6 +16,8 @@ export interface User {
   email: string;
   role: Role;
   name: string;
+  specialities?: string;
+  hourly_rate?: number;
 }
 
 export interface Customer {

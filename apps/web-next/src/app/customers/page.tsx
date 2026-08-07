@@ -85,7 +85,10 @@ export default function CustomersPage() {
               {customers.map((c) => (
                 <tr key={c.id} className="hover:bg-surface-2 transition-colors">
                   <td className="px-5 py-3.5 text-sm font-medium">
-                    <Link href={`/customers/${c.id}`} className="text-ink hover:text-amber transition-colors">
+                    <Link
+                      href={`/customers/${c.id}`}
+                      className="font-bold text-amber hover:underline hover:text-amber-bright transition-colors inline-flex items-center gap-1"
+                    >
                       {c.name}
                     </Link>
                   </td>

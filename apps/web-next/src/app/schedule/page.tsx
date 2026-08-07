@@ -321,6 +321,87 @@ export default function SchedulePage() {
         </Card>
       )}
 
+      {/* Schedule Form (Original compatibility form for spec) */}
+      {showForm && (
+        <Card className="border-amber/30 bg-surface-2/60">
+          <CardContent className="p-5">
+            <h3 className="text-sm font-semibold text-ink mb-4 flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-amber" /> Create Scheduled Window
+            </h3>
+            <form onSubmit={createSchedule} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-ink-dim mb-1 block">Service Bay *</label>
+                <select
+                  value={form.bay_id}
+                  onChange={(e) => setForm({ ...form, bay_id: e.target.value })}
+                  required
+                  className="gf-input w-full"
+                >
+                  <option value="">Select Bay</option>
+                  {bays.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-ink-dim mb-1 block">Repair Order *</label>
+                <select
+                  value={form.repair_order_id}
+                  onChange={(e) => setForm({ ...form, repair_order_id: e.target.value })}
+                  required
+                  className="gf-input w-full"
+                >
+                  <option value="">Select RO</option>
+                  {orders.map((ro) => (
+                    <option key={ro.id} value={ro.id}>
+                      {ro.description || `RO-${ro.id.slice(0, 8)}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-ink-dim mb-1 block">Start Time *</label>
+                <input
+                  type="datetime-local"
+                  value={form.start_time}
+                  onChange={(e) => setForm({ ...form, start_time: e.target.value })}
+                  required
+                  className="gf-input w-full"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-ink-dim mb-1 block">End Time *</label>
+                <input
+                  type="datetime-local"
+                  value={form.end_time}
+                  onChange={(e) => setForm({ ...form, end_time: e.target.value })}
+                  required
+                  className="gf-input w-full"
+                />
+              </div>
+
+              <div className="md:col-span-2 pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="gf-btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="gf-btn-primary">
+                  Create
+                </button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Main Drag and Drop Interactive Shop Floor */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Service Bays Board */}
@@ -518,87 +599,6 @@ export default function SchedulePage() {
                 );
               })}
             </div>
-          )}
-
-          {/* Schedule Form (Original compatibility form for spec) */}
-          {showForm && (
-            <Card className="mt-6 border-amber/30 bg-surface-2/60">
-              <CardContent className="p-5">
-                <h3 className="text-sm font-semibold text-ink mb-4 flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-amber" /> Create Scheduled Window
-                </h3>
-                <form onSubmit={createSchedule} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-medium text-ink-dim mb-1 block">Service Bay *</label>
-                    <select
-                      value={form.bay_id}
-                      onChange={(e) => setForm({ ...form, bay_id: e.target.value })}
-                      required
-                      className="gf-input w-full"
-                    >
-                      <option value="">Select Bay</option>
-                      {bays.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-ink-dim mb-1 block">Repair Order *</label>
-                    <select
-                      value={form.repair_order_id}
-                      onChange={(e) => setForm({ ...form, repair_order_id: e.target.value })}
-                      required
-                      className="gf-input w-full"
-                    >
-                      <option value="">Select RO</option>
-                      {orders.map((ro) => (
-                        <option key={ro.id} value={ro.id}>
-                          {ro.description || `RO-${ro.id.slice(0, 8)}`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-ink-dim mb-1 block">Start Time *</label>
-                    <input
-                      type="datetime-local"
-                      value={form.start_time}
-                      onChange={(e) => setForm({ ...form, start_time: e.target.value })}
-                      required
-                      className="gf-input w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-ink-dim mb-1 block">End Time *</label>
-                    <input
-                      type="datetime-local"
-                      value={form.end_time}
-                      onChange={(e) => setForm({ ...form, end_time: e.target.value })}
-                      required
-                      className="gf-input w-full"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2 pt-2 flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowForm(false)}
-                      className="gf-btn-secondary"
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="gf-btn-primary">
-                      Create Schedule
-                    </button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
           )}
 
           {/* Timeline & Active Assignments Table */}

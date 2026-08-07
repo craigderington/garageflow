@@ -120,9 +120,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ct, err := h.db.Exec(r.Context(),
-		`UPDATE vehicles SET vin = $1, make = $2, model = $3, year = $4, color = $5, license_plate = $6, updated_at = NOW()
-		 WHERE id = $7 AND shop_id = $8`,
-		req.VIN, req.Make, req.Model, req.Year, req.Color, req.LicensePlate, id, shopID)
+		`UPDATE vehicles SET vin = $1, make = $2, model = $3, year = $4, color = $5, license_plate = $6,
+		 customer_id = COALESCE(NULLIF($7, '')::uuid, customer_id), updated_at = NOW()
+		 WHERE id = $8 AND shop_id = $9`,
+		req.VIN, req.Make, req.Model, req.Year, req.Color, req.LicensePlate, req.CustomerID, id, shopID)
 	if err != nil {
 		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
 		return

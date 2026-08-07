@@ -37,6 +37,7 @@ import (
 	"github.com/garageflow/api-go/internal/scheduling"
 	"github.com/garageflow/api-go/internal/sms"
 	"github.com/garageflow/api-go/internal/storage"
+	"github.com/garageflow/api-go/internal/users"
 	"github.com/garageflow/api-go/internal/vehicles"
 )
 
@@ -231,6 +232,7 @@ func main() {
 			r.Post("/", roHandler.Create)
 			r.Get("/{id}", roHandler.Get)
 			r.Patch("/{id}", roHandler.Update)
+			r.Delete("/{id}", roHandler.Delete)
 			r.Route("/{id}/photos", func(r chi.Router) {
 				r.Get("/", photosHandler.List)
 				r.Post("/", photosHandler.Upload)
@@ -258,6 +260,7 @@ func main() {
 			r.Post("/", custHandler.Create)
 			r.Get("/{id}", custHandler.Get)
 			r.Patch("/{id}", custHandler.Update)
+			r.Put("/{id}", custHandler.Update)
 			r.Delete("/{id}", custHandler.Delete)
 		})
 
@@ -267,15 +270,27 @@ func main() {
 			r.Post("/", vehHandler.Create)
 			r.Get("/{id}", vehHandler.Get)
 			r.Patch("/{id}", vehHandler.Update)
+			r.Put("/{id}", vehHandler.Update)
 			r.Delete("/{id}", vehHandler.Delete)
 		})
 
 		r.Route("/estimates", func(r chi.Router) {
 			r.Post("/", estHandler.Create)
+			r.Put("/{id}", estHandler.Update)
+			r.Patch("/{id}", estHandler.Update)
 			r.Post("/{id}/send", estHandler.Send)
 			r.Post("/{id}/approve", estHandler.Approve)
 			r.Post("/{id}/pay", estHandler.Pay)
 			r.Get("/ro/{ro_id}", estHandler.GetByRO)
+		})
+
+		userHandler := users.NewHandler(pool)
+		r.Route("/users", func(r chi.Router) {
+			r.Get("/", userHandler.List)
+			r.Post("/", userHandler.Create)
+			r.Put("/{id}", userHandler.Update)
+			r.Patch("/{id}", userHandler.Update)
+			r.Delete("/{id}", userHandler.Delete)
 		})
 
 		invHandler := inventory.NewHandler(pool, bus)

@@ -34,6 +34,8 @@ type updateRORequest struct {
 	Status      *string `json:"status,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Mileage     *int    `json:"mileage,omitempty"`
+	CustomerID  *string `json:"customer_id,omitempty"`
+	VehicleID   *string `json:"vehicle_id,omitempty"`
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -85,8 +87,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:   time.Now(),
 	}
 
-	// vehicle_id is an optional UUID FK (ON DELETE SET NULL); insert NULL rather
-	// than an empty string when a repair order is opened without a vehicle.
 	var vehicle interface{}
 	if o.VehicleID != "" {
 		vehicle = o.VehicleID
@@ -167,5 +167,46 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.CustomerID != nil && *req.CustomerID != "" {
+		_, err := h.db.Exec(r.Context(),
+			`UPDATE repair_orders SET customer_id = $1, updated_at = NOW() WHERE id = $2 AND shop_id = $3`,
+			*req.CustomerID, id, shopID)
+		if err != nil {
+			http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if req.VehicleID != nil {
+		var v interface{}
+		if *req.VehicleID != "" {
+			v = *req.VehicleID
+		}
+		_, err := h.db.Exec(r.Context(),
+			`UPDATE repair_orders SET vehicle_id = $1, updated_at = NOW() WHERE id = $2 AND shop_id = $3`,
+			v, id, shopID)
+		if err != nil {
+			http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
 	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	ct, err := h.db.Exec(r.Context(),
+		`DELETE FROM repair_orders WHERE id = $1 AND shop_id = $2`, id, shopID)
+	if err != nil {
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if ct.RowsAffected() == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
