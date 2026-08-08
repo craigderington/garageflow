@@ -6,7 +6,7 @@ COPY apps/web-next/package.json apps/web-next/package-lock.json ./
 RUN npm ci
 COPY apps/web-next/ .
 # NEXT_PUBLIC_* are inlined at build time; allow override via build arg.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8081
+ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 

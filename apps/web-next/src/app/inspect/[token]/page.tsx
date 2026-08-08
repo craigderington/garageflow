@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Check, AlertTriangle, CircleAlert, Wrench, ShieldCheck } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 type Photo = { id: string; filename: string; content_type: string };
 type Item = {
