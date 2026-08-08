@@ -2,6 +2,7 @@ package vehicles
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -40,6 +41,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		 archived_at IS NOT NULL, created_at, updated_at
 		 FROM vehicles WHERE shop_id = $1 AND ($2 OR archived_at IS NULL) ORDER BY created_at DESC`, shopID, includeArchived)
 	if err != nil {
+		log.Printf("vehicles: list failed shop=%s: %v", shopID, err)
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
 	}
