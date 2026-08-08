@@ -2,6 +2,13 @@ import { test, expect, gotoReady } from "./helpers/fixtures";
 import { uniq } from "./helpers/api";
 
 test.describe("customers", () => {
+  test("customer email has a direct email link", async ({ app, api }) => {
+    const email = `${uniq("customer-")}@example.com`;
+    const customer = await (await api.post("/customers", { data: { name: `Email ${uniq()}`, email } })).json();
+    await gotoReady(app, `/customers/${customer.id}`);
+    await expect(app.getByRole("link", { name: email })).toHaveAttribute("href", `mailto:${email}`);
+  });
+
   test("create a customer via the form and see it in the list", async ({ app }) => {
     const name = `Cust ${uniq()}`;
     const phone = "555-0142";

@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { RepairOrder } from "@/lib/types";
+import type { RepairOrder, Estimate, EstimateItem } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Plus, FileText, Send, CheckCircle, CreditCard } from "lucide-react";
+import { EstimateEditor } from "@/components/EstimateEditor";
+import { Plus, FileText, Send, CheckCircle, CreditCard, Pencil } from "lucide-react";
 
 export default function EstimatesPage() {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
@@ -15,6 +16,7 @@ export default function EstimatesPage() {
   const [showForm, setShowForm] = useState(false);
   const [selectedRO, setSelectedRO] = useState("");
   const [items, setItems] = useState([{ type: "part", description: "", quantity: 1, unit_price: 0 }]);
+  const [editing, setEditing] = useState<{ roId: string; data: { estimate: Estimate; items: EstimateItem[] } } | null>(null);
 
   const load = useCallback(async () => {
     const ros = await api.get<RepairOrder[]>("/repair-orders").catch(() => []);
@@ -147,6 +149,15 @@ export default function EstimatesPage() {
         </Card>
       )}
 
+      {editing && (
+        <Card className="border-amber/30">
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between"><h2 className="text-sm font-bold text-ink">Edit Estimate</h2><button onClick={() => setEditing(null)} className="gf-btn-ghost text-xs">Cancel</button></div>
+            <EstimateEditor repairOrderId={editing.roId} existing={editing.data} onSaved={() => { setEditing(null); load(); }} />
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -174,6 +185,9 @@ export default function EstimatesPage() {
                       <td className="px-5 py-3.5 text-sm text-ink-dim nums">{est?.items?.length || 0} items</td>
                       <td className="px-5 py-3.5">
                         <div className="flex gap-1.5">
+                          {est?.estimate?.status !== "paid" && (
+                            <button onClick={() => setEditing({ roId: ro.id, data: est })} className="gf-btn px-2.5 py-1.5 text-xs bg-blue-400/10 text-blue-300 border border-blue-400/25 hover:bg-blue-400/20"><Pencil className="w-3 h-3" /> Edit</button>
+                          )}
                           {est?.estimate?.status === "draft" && (
                             <button
                               onClick={() => send(est.estimate.id)}

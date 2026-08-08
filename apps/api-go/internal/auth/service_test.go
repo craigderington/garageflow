@@ -48,3 +48,19 @@ func TestIssueSessionRoundTrips(t *testing.T) {
 		t.Errorf("got (%q,%q,%q), want (user-1,shop-1,owner)", uid, sid, role)
 	}
 }
+
+func TestRevokeSessionInvalidatesToken(t *testing.T) {
+	rdb, cleanup := testRedis(t)
+	defer cleanup()
+	svc := &Service{rdb: rdb}
+	token, err := svc.IssueSession(context.Background(), "user-2", "shop-2", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeSession(context.Background(), token); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.ValidateSession(context.Background(), token); err == nil {
+		t.Fatal("revoked session still validates")
+	}
+}

@@ -6,6 +6,18 @@ async function makeCustomer(api: import("@playwright/test").APIRequestContext, n
 }
 
 test.describe("vehicles", () => {
+  test("archive and restore a vehicle from the list", async ({ app, api }) => {
+    const customer = await (await api.post("/customers", { data: { name: `Archive ${uniq()}` } })).json();
+    const make = `ArchiveMake${uniq()}`;
+    await api.post("/vehicles", { data: { customer_id: customer.id, make, model: "Retired", year: 2015 } });
+    await gotoReady(app, "/vehicles");
+    await app.getByLabel(`Archive ${make} Retired`).click();
+    await expect(app.getByText(make)).toHaveCount(0);
+    await app.getByText("Show archived vehicles").click();
+    await expect(app.getByText(make)).toBeVisible();
+    await app.getByLabel(`Restore ${make} Retired`).click();
+  });
+
   test("create a vehicle via the form and see it in the list", async ({ app, api }) => {
     const custName = `Owner ${uniq()}`;
     await makeCustomer(api, custName);

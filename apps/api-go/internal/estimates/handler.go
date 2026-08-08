@@ -3,6 +3,7 @@ package estimates
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -43,8 +44,8 @@ func NewHandler(db *pgxpool.Pool, bus *events.Bus, pay *payments.Service, appURL
 }
 
 type createEstimateRequest struct {
-	RepairOrderID string               `json:"repair_order_id"`
-	Items         []estimateItemInput  `json:"items"`
+	RepairOrderID string              `json:"repair_order_id"`
+	Items         []estimateItemInput `json:"items"`
 }
 
 type estimateItemInput struct {
@@ -58,13 +59,17 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 
 	var req createEstimateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RepairOrderID == "" || len(req.Items) == 0 {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
 	var total float64
 	for _, item := range req.Items {
+		if item.Description == "" || item.Quantity <= 0 || item.UnitPrice < 0 {
+			http.Error(w, `{"error":"invalid estimate item"}`, http.StatusBadRequest)
+			return
+		}
 		total += item.Quantity * item.UnitPrice
 	}
 
@@ -120,20 +125,8 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	now := time.Now()
-	_, err := h.db.Exec(r.Context(),
-		`UPDATE estimates SET status = 'approved', approved_at = $1, updated_at = $1
-		 WHERE id = $2 AND shop_id = $3`, now, id, shopID)
-	if err != nil {
+	if err := h.transition(r.Context(), id, shopID, "approved", "approved"); err != nil {
 		http.Error(w, `{"error":"approve failed"}`, http.StatusInternalServerError)
-		return
-	}
-
-	_, err = h.db.Exec(r.Context(),
-		`UPDATE repair_orders SET status = 'approved', updated_at = $1
-		 WHERE id = (SELECT repair_order_id FROM estimates WHERE id = $2)`, now, id)
-	if err != nil {
-		http.Error(w, `{"error":"update RO status failed"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -149,18 +142,10 @@ func (h *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	now := time.Now()
-	_, err := h.db.Exec(r.Context(),
-		`UPDATE estimates SET status = 'sent', sent_at = $1, updated_at = $1
-		 WHERE id = $2 AND shop_id = $3`, now, id, shopID)
-	if err != nil {
+	if err := h.transition(r.Context(), id, shopID, "sent", "estimate_sent"); err != nil {
 		http.Error(w, `{"error":"send failed"}`, http.StatusInternalServerError)
 		return
 	}
-
-	_, err = h.db.Exec(r.Context(),
-		`UPDATE repair_orders SET status = 'estimate_sent', updated_at = $1
-		 WHERE id = (SELECT repair_order_id FROM estimates WHERE id = $2)`, now, id)
 
 	h.bus.Publish(r.Context(), events.TypeEstimateSent, events.EstimateSentPayload{
 		EstimateID: id,
@@ -168,6 +153,35 @@ func (h *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	})
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+}
+
+func (h *Handler) transition(ctx context.Context, id, shopID, estimateStatus, roStatus string) error {
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var roID string
+	stampColumn := "sent_at"
+	if estimateStatus == "approved" {
+		stampColumn = "approved_at"
+	}
+	query := `UPDATE estimates SET status = $1, ` + stampColumn + ` = NOW(), updated_at = NOW()
+		WHERE id = $2 AND shop_id = $3 RETURNING repair_order_id`
+	if err := tx.QueryRow(ctx, query, estimateStatus, id, shopID).Scan(&roID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx,
+		`UPDATE repair_orders SET status = $1, updated_at = NOW() WHERE id = $2 AND shop_id = $3`,
+		roStatus, roID, shopID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("repair order not found")
+	}
+	return tx.Commit(ctx)
 }
 
 func (h *Handler) GetByRO(w http.ResponseWriter, r *http.Request) {
@@ -334,16 +348,28 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Items != nil {
+		if len(req.Items) == 0 {
+			http.Error(w, `{"error":"estimate requires at least one item"}`, http.StatusBadRequest)
+			return
+		}
 		var total float64
 		for _, item := range req.Items {
+			if item.Description == "" || item.Quantity <= 0 || item.UnitPrice < 0 {
+				http.Error(w, `{"error":"invalid estimate item"}`, http.StatusBadRequest)
+				return
+			}
 			total += item.Quantity * item.UnitPrice
 		}
 
-		_, err := tx.Exec(r.Context(),
+		tag, err := tx.Exec(r.Context(),
 			`UPDATE estimates SET total = $1, updated_at = NOW() WHERE id = $2 AND shop_id = $3`,
 			total, id, shopID)
 		if err != nil {
 			http.Error(w, `{"error":"update total failed"}`, http.StatusInternalServerError)
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 			return
 		}
 

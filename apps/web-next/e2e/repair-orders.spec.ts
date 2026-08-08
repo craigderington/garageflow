@@ -13,6 +13,34 @@ async function makeRO(api: import("@playwright/test").APIRequestContext, descrip
 }
 
 test.describe("repair orders", () => {
+  test("create and edit an estimate without leaving the repair order", async ({ app, api }) => {
+    const { ro } = await makeRO(api, `Inline estimate ${uniq()}`);
+    await gotoReady(app, `/repair-orders/${ro.id}`);
+
+    await app.getByPlaceholder("Description").fill("Front brake pads");
+    await app.getByLabel("Quantity").fill("2");
+    await app.getByLabel("Unit price").fill("75");
+    await app.getByRole("button", { name: /create estimate/i }).click();
+    await expect(app.getByText("Front brake pads")).toBeVisible();
+    await expect(app.getByTestId("estimate-total")).toHaveText("$150.00");
+
+    await app.getByRole("button", { name: /^edit$/i }).click();
+    await app.getByPlaceholder("Description").fill("Premium front brake pads");
+    await app.getByRole("button", { name: /save estimate/i }).click();
+    await expect(app.getByText("Premium front brake pads")).toBeVisible();
+  });
+
+  test("add completed labor from the repair orders page", async ({ app, api }) => {
+    const { ro } = await makeRO(api, `Inline labor ${uniq()}`);
+    await gotoReady(app, "/repair-orders");
+    const laborCard = app.locator("div.gf-card").filter({ hasText: "Add Completed Labor" });
+    await laborCard.getByRole("combobox").nth(0).selectOption(ro.id);
+    await laborCard.getByRole("spinbutton").fill("30");
+    await laborCard.getByPlaceholder(/Diagnostics/i).fill("Road test");
+    await laborCard.getByRole("button", { name: /add labor/i }).click();
+    await expect(laborCard.getByRole("status")).toContainText("Labor added");
+  });
+
   test("detail shows description, status, customer + vehicle links, empty sections", async ({ app, api }) => {
     const desc = `Coolant flush ${uniq()}`;
     const { c, v } = await makeRO(api, desc);

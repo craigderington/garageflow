@@ -2,11 +2,7 @@ package auth
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/garageflow/api-go/internal/middleware"
 )
@@ -85,6 +81,10 @@ func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RevokeSession(r.Context(), middleware.GetSessionToken(r.Context())); err != nil {
+		http.Error(w, `{"error":"logout failed"}`, http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    "",
@@ -97,7 +97,6 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 type passwordSetRequest struct {
-	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
@@ -107,8 +106,8 @@ func (h *Handler) SetPassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
-	if err := h.svc.SetPassword(r.Context(), req.Email, req.Password); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+	if err := h.svc.SetPasswordForUser(r.Context(), middleware.GetUserID(r.Context()), req.Password); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "password_set"})
@@ -131,10 +130,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionToken := uuid.New().String()
-	sessionKey := "session:" + sessionToken
-	sessionData := fmt.Sprintf(`{"uid":"%s","sid":"%s","role":"%s"}`, userID, shopID, role)
-	h.svc.rdb.Set(r.Context(), sessionKey, sessionData, 24*time.Hour)
+	sessionToken, err := h.svc.IssueSession(r.Context(), userID, shopID, role)
+	if err != nil {
+		http.Error(w, `{"error":"login failed"}`, http.StatusServiceUnavailable)
+		return
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",

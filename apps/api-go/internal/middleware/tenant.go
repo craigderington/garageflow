@@ -8,9 +8,10 @@ import (
 type CtxKey string
 
 const (
-	ShopIDKey   CtxKey = "shop_id"
-	UserIDKey   CtxKey = "user_id"
-	UserRoleKey CtxKey = "user_role"
+	ShopIDKey       CtxKey = "shop_id"
+	UserIDKey       CtxKey = "user_id"
+	UserRoleKey     CtxKey = "user_role"
+	SessionTokenKey CtxKey = "session_token"
 )
 
 func GetShopID(ctx context.Context) string {
@@ -25,6 +26,11 @@ func GetUserID(ctx context.Context) string {
 
 func GetUserRole(ctx context.Context) string {
 	v, _ := ctx.Value(UserRoleKey).(string)
+	return v
+}
+
+func GetSessionToken(ctx context.Context) string {
+	v, _ := ctx.Value(SessionTokenKey).(string)
 	return v
 }
 
@@ -54,4 +60,8 @@ func WithUserID(ctx context.Context, userID string) context.Context {
 
 func WithUserRole(ctx context.Context, role string) context.Context {
 	return context.WithValue(ctx, UserRoleKey, role)
+}
+
+func WithSessionToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, SessionTokenKey, token)
 }

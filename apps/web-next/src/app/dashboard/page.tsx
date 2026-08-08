@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { RepairOrder, InventoryPart, Customer, Bay, Schedule } from "@/lib/types";
+import type { RepairOrder, InventoryPart, Customer, Bay, Schedule, Vehicle } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { StatCard } from "@/components/ui/StatCard";
 import { Card, CardHeader, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const [customers, setCustomers] = useState<Map<string, string>>(new Map());
   const [bays, setBays] = useState<Bay[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [vehicles, setVehicles] = useState<Map<string, Vehicle>>(new Map());
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -35,6 +37,7 @@ export default function DashboardPage() {
     api.get<InventoryPart[]>("/inventory").then(setInventory).catch(() => {});
     api.get<Bay[]>("/schedule/bays").then(setBays).catch(() => {});
     api.get<Schedule[]>("/schedule").then(setSchedules).catch(() => {});
+    api.get<Vehicle[]>("/vehicles").then((items) => setVehicles(new Map(items.map((v) => [v.id, v])))).catch(() => {});
     api
       .get<Customer[]>("/customers")
       .then((cs) => {
@@ -103,15 +106,16 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y divide-line">
                 {inService.map((ro) => (
-                  <div key={ro.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-surface-2 transition-colors">
+                  <Link href={`/repair-orders/${ro.id}`} key={ro.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-surface-2 transition-colors">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-ink truncate">{ro.description || "Repair Order"}</p>
                       <p className="text-xs text-ink-mute mt-0.5">
                         {customers.get(ro.customer_id) || "Unknown"} · <span className="nums">RO#{ro.id.slice(0, 7)}</span>
                       </p>
+                      {ro.vehicle_id && <p className="text-xs text-amber mt-1">{vehicles.get(ro.vehicle_id)?.year} {vehicles.get(ro.vehicle_id)?.make} {vehicles.get(ro.vehicle_id)?.model}</p>}
                     </div>
                     <Badge status={ro.status}>{ro.status.replace(/_/g, " ")}</Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -132,7 +136,7 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y divide-line">
                 {awaitingService.map((ro) => (
-                  <div key={ro.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-surface-2 transition-colors">
+                  <Link href={`/repair-orders/${ro.id}`} key={ro.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-surface-2 transition-colors">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-ink truncate">{ro.description || "Repair Order"}</p>
                       <p className="text-xs text-ink-mute mt-0.5">
@@ -140,7 +144,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <Badge status={ro.status}>{ro.status.replace(/_/g, " ")}</Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -159,7 +163,7 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y divide-line">
                 {orders.slice(0, 8).map((ro) => (
-                  <div key={ro.id} className="px-5 py-3 flex items-center justify-between hover:bg-surface-2 transition-colors">
+                  <Link href={`/repair-orders/${ro.id}`} key={ro.id} className="px-5 py-3 flex items-center justify-between hover:bg-surface-2 transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${dotForStatus(ro.status)}`} />
                       <div className="min-w-0">
@@ -171,7 +175,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <Badge status={ro.status}>{ro.status.replace(/_/g, " ")}</Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -191,13 +195,13 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y divide-line">
                 {lowStock.slice(0, 6).map((p) => (
-                  <div key={p.id} className="px-5 py-3 flex items-center justify-between">
+                  <Link href={`/inventory?item=${p.id}`} key={p.id} className="px-5 py-3 flex items-center justify-between hover:bg-surface-2 transition-colors">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-ink truncate">{p.name}</p>
                       <p className="text-xs text-ink-mute">SKU: <span className="nums">{p.sku || "—"}</span></p>
                     </div>
                     <span className="nums text-sm font-bold text-rose-400">{p.stock_level}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

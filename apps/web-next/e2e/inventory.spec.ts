@@ -2,6 +2,21 @@ import { test, expect, gotoReady } from "./helpers/fixtures";
 import { uniq } from "./helpers/api";
 
 test.describe("inventory", () => {
+  test("view, edit, and archive an inventory item", async ({ app, api }) => {
+    const name = `Detail part ${uniq()}`;
+    const updated = `Updated part ${uniq()}`;
+    await api.post("/inventory", { data: { name, sku: uniq("SKU"), description: "Original", stock_level: 4, min_stock: 2, unit_price: 12 } });
+    await gotoReady(app, "/inventory");
+    await app.getByRole("button", { name, exact: true }).click();
+    await expect(app.getByText("Original")).toBeVisible();
+    await app.getByRole("button", { name: "Edit", exact: true }).click();
+    await app.getByPlaceholder("Part name").fill(updated);
+    await app.getByRole("button", { name: /save item/i }).click();
+    await expect(app.getByText(updated).first()).toBeVisible();
+    await app.getByRole("button", { name: "Archive", exact: true }).click();
+    await expect(app.getByText(updated)).toHaveCount(0);
+  });
+
   test("create a part via the form and see it in the list", async ({ app }) => {
     const name = `Part ${uniq()}`;
     const sku = uniq("SKU").toUpperCase();

@@ -33,10 +33,12 @@ type createVehicleRequest struct {
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
+	includeArchived := r.URL.Query().Get("include_archived") == "true"
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, shop_id, customer_id, vin, make, model, year, color, license_plate, created_at, updated_at
-		 FROM vehicles WHERE shop_id = $1 ORDER BY created_at DESC`, shopID)
+		`SELECT id, shop_id, customer_id, vin, make, model, year, color, license_plate,
+		 archived_at IS NOT NULL, created_at, updated_at
+		 FROM vehicles WHERE shop_id = $1 AND ($2 OR archived_at IS NULL) ORDER BY created_at DESC`, shopID, includeArchived)
 	if err != nil {
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
@@ -46,7 +48,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var vehicles []types.Vehicle
 	for rows.Next() {
 		var v types.Vehicle
-		if err := rows.Scan(&v.ID, &v.ShopID, &v.CustomerID, &v.VIN, &v.Make, &v.Model, &v.Year, &v.Color, &v.LicensePlate, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.ShopID, &v.CustomerID, &v.VIN, &v.Make, &v.Model, &v.Year, &v.Color, &v.LicensePlate, &v.Archived, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			continue
 		}
 		vehicles = append(vehicles, v)
@@ -99,14 +101,40 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 	var v types.Vehicle
 	err := h.db.QueryRow(r.Context(),
-		`SELECT id, shop_id, customer_id, vin, make, model, year, color, license_plate, created_at, updated_at
+		`SELECT id, shop_id, customer_id, vin, make, model, year, color, license_plate, archived_at IS NOT NULL, created_at, updated_at
 		 FROM vehicles WHERE id = $1 AND shop_id = $2`, id, shopID,
-	).Scan(&v.ID, &v.ShopID, &v.CustomerID, &v.VIN, &v.Make, &v.Model, &v.Year, &v.Color, &v.LicensePlate, &v.CreatedAt, &v.UpdatedAt)
+	).Scan(&v.ID, &v.ShopID, &v.CustomerID, &v.VIN, &v.Make, &v.Model, &v.Year, &v.Color, &v.LicensePlate, &v.Archived, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
 	json.NewEncoder(w).Encode(v)
+}
+
+type archiveRequest struct {
+	Archived bool `json:"archived"`
+}
+
+func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	id := chi.URLParam(r, "id")
+	var req archiveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	tag, err := h.db.Exec(r.Context(),
+		`UPDATE vehicles SET archived_at = CASE WHEN $1 THEN NOW() ELSE NULL END, updated_at = NOW()
+		 WHERE id = $2 AND shop_id = $3`, req.Archived, id, shopID)
+	if err != nil {
+		http.Error(w, `{"error":"archive failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	h.Get(w, r)
 }
 
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {

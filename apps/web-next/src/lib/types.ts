@@ -39,6 +39,7 @@ export interface Vehicle {
   year: number;
   color: string;
   license_plate: string;
+  archived: boolean;
 }
 
 export interface RepairOrder {
@@ -84,6 +85,7 @@ export interface InventoryPart {
   min_stock: number;
   unit_price: number;
   vendor_id: string | null;
+  archived: boolean;
 }
 
 export interface LaborLog {

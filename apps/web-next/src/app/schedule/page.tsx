@@ -6,6 +6,7 @@ import type { Bay, Schedule, RepairOrder, Customer, Vehicle } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { InlineLabor } from "@/components/InlineLabor";
 import {
   Plus,
   CalendarDays,
@@ -19,7 +20,6 @@ import {
   User,
   Trash2,
   X,
-  RefreshCw,
   Zap,
 } from "lucide-react";
 
@@ -40,7 +40,7 @@ export default function SchedulePage() {
   const [draggedRoId, setDraggedRoId] = useState<string | null>(null);
   const [dragOverBayId, setDragOverBayId] = useState<string | null>(null);
   const [dragOverUnassigned, setDragOverUnassigned] = useState(false);
-  const [loadingAction, setLoadingAction] = useState(false);
+  const [, setLoadingAction] = useState(false);
 
   const load = useCallback(() => {
     api.get<Bay[]>("/schedule/bays").then(setBays).catch(() => {});
@@ -767,6 +767,7 @@ export default function SchedulePage() {
           </div>
         </div>
       </div>
+      <InlineLabor orders={orders.filter((ro) => !["closed", "invoiced"].includes(ro.status))} />
     </div>
   );
 }

@@ -18,6 +18,15 @@ test.describe("dashboard", () => {
     await expect(app.getByText(desc).first()).toBeVisible();
   });
 
+  test("dashboard repair-order records open the selected order", async ({ app, api }) => {
+    const desc = `Dash link ${uniq()}`;
+    const customer = await (await api.post("/customers", { data: { name: `Link ${uniq()}` } })).json();
+    const ro = await (await api.post("/repair-orders", { data: { customer_id: customer.id, description: desc } })).json();
+    await gotoReady(app, "/dashboard");
+    await app.getByText(desc).first().click();
+    await expect(app).toHaveURL(new RegExp(`/repair-orders/${ro.id}`));
+  });
+
   test("an in-progress repair order shows under Vehicles In Service", async ({ app, api }) => {
     const desc = `Dash inservice ${uniq()}`;
     const c = await (await api.post("/customers", { data: { name: `D ${uniq()}` } })).json();

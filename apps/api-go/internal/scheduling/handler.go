@@ -153,8 +153,16 @@ func (h *Handler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	startTime, _ := time.Parse(time.RFC3339, req.StartTime)
-	endTime, _ := time.Parse(time.RFC3339, req.EndTime)
+	startTime, err := time.Parse(time.RFC3339, req.StartTime)
+	if err != nil {
+		http.Error(w, `{"error":"invalid start_time"}`, http.StatusBadRequest)
+		return
+	}
+	endTime, err := time.Parse(time.RFC3339, req.EndTime)
+	if err != nil || !endTime.After(startTime) {
+		http.Error(w, `{"error":"end_time must be after start_time"}`, http.StatusBadRequest)
+		return
+	}
 
 	s := Schedule{
 		ID:            uuid.New().String(),
@@ -172,7 +180,7 @@ func (h *Handler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		technician = req.TechnicianID
 	}
 
-	_, err := h.db.Exec(r.Context(),
+	_, err = h.db.Exec(r.Context(),
 		`INSERT INTO schedules (id, shop_id, bay_id, repair_order_id, technician_id, start_time, end_time, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		s.ID, s.ShopID, s.BayID, s.RepairOrderID, technician, s.StartTime, s.EndTime, s.CreatedAt)
@@ -200,10 +208,20 @@ func (h *Handler) AssignRO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove any existing schedule for this RO to prevent duplicate bay occupancy
-	_, _ = h.db.Exec(r.Context(),
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"assign failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	// Remove any existing schedule for this RO to prevent duplicate bay occupancy.
+	if _, err := tx.Exec(r.Context(),
 		`DELETE FROM schedules WHERE shop_id = $1 AND repair_order_id = $2`,
-		shopID, req.RepairOrderID)
+		shopID, req.RepairOrderID); err != nil {
+		http.Error(w, `{"error":"assign failed"}`, http.StatusInternalServerError)
+		return
+	}
 
 	var technician interface{}
 	if req.TechnicianID != "" {
@@ -224,7 +242,7 @@ func (h *Handler) AssignRO(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     now,
 	}
 
-	_, err := h.db.Exec(r.Context(),
+	_, err = tx.Exec(r.Context(),
 		`INSERT INTO schedules (id, shop_id, bay_id, repair_order_id, technician_id, start_time, end_time, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		s.ID, s.ShopID, s.BayID, s.RepairOrderID, technician, s.StartTime, s.EndTime, s.CreatedAt)
@@ -234,10 +252,17 @@ func (h *Handler) AssignRO(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Progress status to in_progress if currently created, diagnosed, or approved
-	_, _ = h.db.Exec(r.Context(),
+	if _, err = tx.Exec(r.Context(),
 		`UPDATE repair_orders SET status = 'in_progress', updated_at = NOW()
 		 WHERE shop_id = $1 AND id = $2 AND status IN ('created', 'diagnosed', 'approved')`,
-		shopID, req.RepairOrderID)
+		shopID, req.RepairOrderID); err != nil {
+		http.Error(w, `{"error":"assign failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		http.Error(w, `{"error":"assign failed"}`, http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(s)
@@ -282,4 +307,3 @@ func (h *Handler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
-

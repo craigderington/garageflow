@@ -41,6 +41,7 @@ func AuthMiddleware(authSvc SessionValidator) func(http.Handler) http.Handler {
 			ctx := WithShopID(r.Context(), shopID)
 			ctx = WithUserID(ctx, userID)
 			ctx = WithUserRole(ctx, role)
+			ctx = WithSessionToken(ctx, sessionToken)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

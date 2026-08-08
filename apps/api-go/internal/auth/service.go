@@ -145,16 +145,26 @@ func (s *Service) CreateUser(ctx context.Context, shopID, email, name, role stri
 	return err
 }
 
-func (s *Service) SetPassword(ctx context.Context, email, password string) error {
+func (s *Service) SetPasswordForUser(ctx context.Context, userID, password string) error {
+	if len(password) < 12 {
+		return fmt.Errorf("password must be at least 12 characters")
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 	_, err = s.db.Exec(ctx,
-		`UPDATE users SET password_hash = $1 WHERE email = $2`,
-		string(hash), email,
+		`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+		string(hash), userID,
 	)
 	return err
+}
+
+func (s *Service) RevokeSession(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
+	}
+	return s.rdb.Del(ctx, "session:"+token).Err()
 }
 
 func (s *Service) VerifyPassword(ctx context.Context, email, password string) (string, string, string, error) {

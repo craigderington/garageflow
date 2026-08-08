@@ -8,6 +8,18 @@ async function makeRO(api: import("@playwright/test").APIRequestContext, descrip
 }
 
 test.describe("labor", () => {
+  test("owner can create a technician from the roster", async ({ app }) => {
+    const name = `Tech ${uniq()}`;
+    const email = `${uniq("tech-")}@example.com`;
+    await gotoReady(app, "/labor");
+    await app.getByRole("button", { name: /add technician/i }).click();
+    await app.getByPlaceholder("Full Name").fill(name);
+    await app.getByPlaceholder("Email Address").fill(email);
+    await app.getByRole("button", { name: /create technician/i }).click();
+    await expect(app.getByRole("heading", { name })).toBeVisible();
+    await expect(app.getByText(email)).toBeVisible();
+  });
+
   test("clock in starts an active session, clock out records minutes", async ({ app, api }) => {
     const desc = `LaborRO ${uniq()}`;
     const task = `Replace alternator ${uniq()}`;

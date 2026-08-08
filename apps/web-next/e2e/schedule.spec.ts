@@ -12,6 +12,7 @@ test.describe("schedule", () => {
     const bayName = `Bay ${uniq()}`;
 
     await gotoReady(app, "/schedule");
+    await app.getByRole("button", { name: /add bay/i }).click();
     await app.getByPlaceholder("Bay name").fill(bayName);
     await app.getByRole("button", { name: /^add$/i }).click();
 

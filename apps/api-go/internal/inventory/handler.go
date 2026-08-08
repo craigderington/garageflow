@@ -34,16 +34,18 @@ type createPartRequest struct {
 }
 
 type restockRequest struct {
-	PartID string `json:"part_id"`
+	PartID   string `json:"part_id"`
 	Quantity int    `json:"quantity"`
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
+	includeArchived := r.URL.Query().Get("include_archived") == "true"
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, shop_id, name, sku, description, stock_level, min_stock, unit_price, vendor_id, created_at, updated_at
-		 FROM inventory_parts WHERE shop_id = $1 ORDER BY name ASC`, shopID)
+		`SELECT id, shop_id, name, sku, description, stock_level, min_stock, unit_price, vendor_id,
+		 archived_at IS NOT NULL, created_at, updated_at
+		 FROM inventory_parts WHERE shop_id = $1 AND ($2 OR archived_at IS NULL) ORDER BY name ASC`, shopID, includeArchived)
 	if err != nil {
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
@@ -53,7 +55,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var parts []types.InventoryPart
 	for rows.Next() {
 		var p types.InventoryPart
-		if err := rows.Scan(&p.ID, &p.ShopID, &p.Name, &p.SKU, &p.Description, &p.StockLevel, &p.MinStock, &p.UnitPrice, &p.VendorID, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.ShopID, &p.Name, &p.SKU, &p.Description, &p.StockLevel, &p.MinStock, &p.UnitPrice, &p.VendorID, &p.Archived, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			continue
 		}
 		parts = append(parts, p)
@@ -68,7 +70,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 
 	var req createPartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -95,7 +97,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
 		return
 	}
-
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(p)
 }
@@ -106,9 +107,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 	var p types.InventoryPart
 	err := h.db.QueryRow(r.Context(),
-		`SELECT id, shop_id, name, sku, description, stock_level, min_stock, unit_price, vendor_id, created_at, updated_at
+		`SELECT id, shop_id, name, sku, description, stock_level, min_stock, unit_price, vendor_id, archived_at IS NOT NULL, created_at, updated_at
 		 FROM inventory_parts WHERE id = $1 AND shop_id = $2`, id, shopID,
-	).Scan(&p.ID, &p.ShopID, &p.Name, &p.SKU, &p.Description, &p.StockLevel, &p.MinStock, &p.UnitPrice, &p.VendorID, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.ShopID, &p.Name, &p.SKU, &p.Description, &p.StockLevel, &p.MinStock, &p.UnitPrice, &p.VendorID, &p.Archived, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
@@ -116,12 +117,36 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(p)
 }
 
+func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Archived bool `json:"archived"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	tag, err := h.db.Exec(r.Context(),
+		`UPDATE inventory_parts SET archived_at = CASE WHEN $1 THEN NOW() ELSE NULL END, updated_at = NOW()
+		 WHERE id = $2 AND shop_id = $3`, req.Archived, id, shopID)
+	if err != nil {
+		http.Error(w, `{"error":"archive failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	h.Get(w, r)
+}
+
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 	id := chi.URLParam(r, "id")
 
 	var req createPartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -162,23 +187,30 @@ func (h *Handler) Restock(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 
 	var req restockRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.PartID == "" || req.Quantity <= 0 {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
-	_, err := h.db.Exec(r.Context(),
+	tag, err := h.db.Exec(r.Context(),
 		`UPDATE inventory_parts SET stock_level = stock_level + $1, updated_at = NOW()
 		 WHERE id = $2 AND shop_id = $3`, req.Quantity, req.PartID, shopID)
 	if err != nil {
 		http.Error(w, `{"error":"restock failed"}`, http.StatusInternalServerError)
 		return
 	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
 
 	var newStock int
-	h.db.QueryRow(r.Context(),
-		`SELECT stock_level FROM inventory_parts WHERE id = $1`, req.PartID,
-	).Scan(&newStock)
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT stock_level FROM inventory_parts WHERE id = $1 AND shop_id = $2`, req.PartID, shopID,
+	).Scan(&newStock); err != nil {
+		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		return
+	}
 
 	if newStock < 5 {
 		h.bus.Publish(r.Context(), events.TypeInventoryLowStock, events.InventoryLowStockPayload{
@@ -188,8 +220,8 @@ func (h *Handler) Restock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":     "restocked",
-		"part_id":    req.PartID,
-		"new_stock":  newStock,
+		"status":    "restocked",
+		"part_id":   req.PartID,
+		"new_stock": newStock,
 	})
 }

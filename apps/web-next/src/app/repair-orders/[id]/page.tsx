@@ -7,7 +7,8 @@ import { api } from "@/lib/api";
 import type { RepairOrder, RepairOrderStatus, Customer, Vehicle, Estimate, EstimateItem, LaborLog } from "@/lib/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { ArrowLeft, User, Car, FileText, Wrench, ClipboardList, ImagePlus, Trash2, Loader2, FileText as FileIcon, ClipboardCheck, ArrowRight } from "lucide-react";
+import { EstimateEditor } from "@/components/EstimateEditor";
+import { ArrowLeft, User, Car, FileText, Wrench, ClipboardList, ImagePlus, Trash2, Loader2, FileText as FileIcon, ClipboardCheck, ArrowRight, Pencil } from "lucide-react";
 
 function InspectionSection({ roId }: { roId: string }) {
   const router = useRouter();
@@ -204,6 +205,7 @@ export default function RepairOrderDetailPage() {
   const [labor, setLabor] = useState<LaborLog[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "notfound">("loading");
   const [saving, setSaving] = useState(false);
+  const [editingEstimate, setEditingEstimate] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -324,15 +326,12 @@ export default function RepairOrderDetailPage() {
           <h2 className="gf-eyebrow flex items-center gap-2">
             <FileText className="w-3.5 h-3.5 text-amber" /> Estimate
           </h2>
-          {estimate && <Badge status={estimate.estimate.status}>{estimate.estimate.status}</Badge>}
+          <div className="flex items-center gap-2">{estimate && <Badge status={estimate.estimate.status}>{estimate.estimate.status}</Badge>}{estimate && estimate.estimate.status !== "paid" && <button onClick={() => setEditingEstimate(!editingEstimate)} className="gf-btn-secondary text-xs"><Pencil className="w-3.5 h-3.5" /> {editingEstimate ? "Close Editor" : "Edit"}</button>}</div>
         </CardHeader>
         {!estimate ? (
-          <div className="px-5 py-8 text-center text-sm text-ink-mute">
-            No estimate yet ·{" "}
-            <Link href="/estimates" className="text-amber hover:text-amber-bright">
-              Build one
-            </Link>
-          </div>
+          <CardContent className="p-5"><p className="text-sm text-ink-mute mb-4">No estimate yet. Build it here while reviewing the repair order.</p><EstimateEditor repairOrderId={id} onSaved={load} /></CardContent>
+        ) : editingEstimate ? (
+          <CardContent className="p-5"><EstimateEditor repairOrderId={id} existing={estimate} onSaved={() => { setEditingEstimate(false); load(); }} /></CardContent>
         ) : (
           <>
             <table className="w-full">

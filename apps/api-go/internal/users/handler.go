@@ -29,6 +29,19 @@ type createUserRequest struct {
 	HourlyRate   float64    `json:"hourly_rate"`
 }
 
+func validRole(role types.Role) bool {
+	switch role {
+	case types.RoleOwner, types.RoleAdmin, types.RoleServiceWriter, types.RoleTechnician:
+		return true
+	default:
+		return false
+	}
+}
+
+func canAssignRole(actor string, role types.Role) bool {
+	return validRole(role) && (role != types.RoleOwner || actor == string(types.RoleOwner))
+}
+
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 
@@ -66,6 +79,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.Role == "" {
 		req.Role = types.RoleTechnician
+	}
+	if !canAssignRole(middleware.GetUserRole(r.Context()), req.Role) {
+		http.Error(w, `{"error":"invalid role"}`, http.StatusBadRequest)
+		return
 	}
 	if req.HourlyRate <= 0 {
 		req.HourlyRate = 100.00
@@ -105,6 +122,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
+	if req.Role != "" && !canAssignRole(middleware.GetUserRole(r.Context()), req.Role) {
+		http.Error(w, `{"error":"invalid role"}`, http.StatusBadRequest)
+		return
+	}
 
 	_, err := h.db.Exec(r.Context(),
 		`UPDATE users SET name = COALESCE(NULLIF($1, ''), name), email = COALESCE(NULLIF($2, ''), email),
@@ -123,6 +144,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 	id := chi.URLParam(r, "id")
+	if id == middleware.GetUserID(r.Context()) {
+		http.Error(w, `{"error":"cannot delete your own account"}`, http.StatusConflict)
+		return
+	}
 
 	_, err := h.db.Exec(r.Context(),
 		`DELETE FROM users WHERE id = $1 AND shop_id = $2`, id, shopID)

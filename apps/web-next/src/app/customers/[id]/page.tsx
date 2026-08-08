@@ -18,7 +18,6 @@ import {
   Trash2,
   X,
   Plus,
-  Wrench,
   ChevronRight,
 } from "lucide-react";
 
@@ -460,12 +459,12 @@ export default function CustomerDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-3 text-ink">
-              <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-amber">
+              {customer.email ? <a href={`mailto:${customer.email}`} aria-label={`Email ${customer.name}`} title={`Email ${customer.email}`} className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-amber hover:bg-amber/10 hover:text-amber-bright transition-colors">
                 <Mail className="w-4 h-4" />
-              </div>
+              </a> : <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-ink-mute"><Mail className="w-4 h-4" /></div>}
               <div>
                 <p className="text-xs text-ink-mute">Email Address</p>
-                <p className="font-semibold">{customer.email || "Not provided"}</p>
+                {customer.email ? <a href={`mailto:${customer.email}`} className="font-semibold text-amber hover:underline">{customer.email}</a> : <p className="font-semibold">Not provided</p>}
               </div>
             </div>
             {customer.notes && (

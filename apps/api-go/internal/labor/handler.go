@@ -33,12 +33,56 @@ type clockOutRequest struct {
 	Description string `json:"description"`
 }
 
+type manualRequest struct {
+	RepairOrderID string `json:"repair_order_id"`
+	MechanicID    string `json:"mechanic_id"`
+	Minutes       int    `json:"minutes"`
+	Description   string `json:"description"`
+}
+
+func (h *Handler) AddManual(w http.ResponseWriter, r *http.Request) {
+	shopID := middleware.GetShopID(r.Context())
+	var req manualRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RepairOrderID == "" || req.MechanicID == "" || req.Minutes <= 0 {
+		http.Error(w, `{"error":"repair order, technician, and positive minutes are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var valid bool
+	if err := h.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM repair_orders ro
+			JOIN users u ON u.id = $1 AND u.shop_id = ro.shop_id
+			WHERE ro.id = $2 AND ro.shop_id = $3
+		)`, req.MechanicID, req.RepairOrderID, shopID).Scan(&valid); err != nil || !valid {
+		http.Error(w, `{"error":"repair order or technician not found"}`, http.StatusNotFound)
+		return
+	}
+
+	now := time.Now()
+	log := types.LaborLog{
+		ID: uuid.New().String(), ShopID: shopID, MechanicID: req.MechanicID,
+		RepairOrderID: req.RepairOrderID, Minutes: req.Minutes, Description: req.Description,
+		ClockIn: now.Add(-time.Duration(req.Minutes) * time.Minute), ClockOut: &now, CreatedAt: now,
+	}
+	_, err := h.db.Exec(r.Context(), `
+		INSERT INTO labor_logs (id, shop_id, mechanic_id, repair_order_id, minutes, description, clock_in, clock_out, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		log.ID, log.ShopID, log.MechanicID, log.RepairOrderID, log.Minutes, log.Description, log.ClockIn, log.ClockOut, log.CreatedAt)
+	if err != nil {
+		http.Error(w, `{"error":"add labor failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(log)
+}
+
 func (h *Handler) ClockIn(w http.ResponseWriter, r *http.Request) {
 	shopID := middleware.GetShopID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
 	var req clockInRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RepairOrderID == "" {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -53,7 +97,14 @@ func (h *Handler) ClockIn(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     time.Now(),
 	}
 
-	_, err := h.db.Exec(r.Context(),
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"clock in failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	_, err = tx.Exec(r.Context(),
 		`INSERT INTO labor_logs (id, shop_id, mechanic_id, repair_order_id, description, clock_in, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		log.ID, log.ShopID, log.MechanicID, log.RepairOrderID, log.Description, log.ClockIn, log.CreatedAt)
@@ -62,15 +113,21 @@ func (h *Handler) ClockIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.bus.Publish(r.Context(), events.TypeMechanicClockedIn, events.MechanicClockedInPayload{
-		MechanicID:    userID,
-		RepairOrderID: req.RepairOrderID,
-		ShopID:        shopID,
-	})
-
-	_, err = h.db.Exec(r.Context(),
+	tag, err := tx.Exec(r.Context(),
 		`UPDATE repair_orders SET status = 'in_progress', updated_at = NOW() WHERE id = $1 AND shop_id = $2`,
 		req.RepairOrderID, shopID)
+	if err != nil || tag.RowsAffected() != 1 {
+		http.Error(w, `{"error":"repair order not found"}`, http.StatusNotFound)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		http.Error(w, `{"error":"clock in failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.bus.Publish(r.Context(), events.TypeMechanicClockedIn, events.MechanicClockedInPayload{
+		MechanicID: userID, RepairOrderID: req.RepairOrderID, ShopID: shopID,
+	})
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(log)
@@ -82,18 +139,22 @@ func (h *Handler) ClockOut(w http.ResponseWriter, r *http.Request) {
 	logID := chi.URLParam(r, "id")
 
 	var req clockOutRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Minutes < 0 {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
 	now := time.Now()
-	_, err := h.db.Exec(r.Context(),
+	tag, err := h.db.Exec(r.Context(),
 		`UPDATE labor_logs SET clock_out = $1, minutes = $2, description = COALESCE(NULLIF($3, ''), description)
-		 WHERE id = $4 AND shop_id = $5 AND mechanic_id = $6`,
+		 WHERE id = $4 AND shop_id = $5 AND mechanic_id = $6 AND clock_out IS NULL`,
 		now, req.Minutes, req.Description, logID, shopID, userID)
 	if err != nil {
 		http.Error(w, `{"error":"clock out failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.Error(w, `{"error":"active labor log not found"}`, http.StatusNotFound)
 		return
 	}
 

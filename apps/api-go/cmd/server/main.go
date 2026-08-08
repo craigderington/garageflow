@@ -103,7 +103,7 @@ func main() {
 	// which would cancel the SSE stream at /events after 30s. Applied per route
 	// group below instead, so everything except the stream still gets it.
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173", cfg.AppURL},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -174,7 +174,7 @@ func main() {
 		r.Post("/magic-link", authHandler.MagicLink)
 		r.Post("/verify", authHandler.Verify)
 		r.Post("/login", authHandler.Login)
-		r.Post("/set-password", authHandler.SetPassword)
+		r.With(middleware.AuthMiddleware(authSvc)).Post("/set-password", authHandler.SetPassword)
 		r.With(middleware.AuthMiddleware(authSvc)).Get("/me", authHandler.Me)
 		r.With(middleware.AuthMiddleware(authSvc)).Post("/logout", authHandler.Logout)
 	})
@@ -229,10 +229,10 @@ func main() {
 		roHandler := repairorders.NewHandler(pool, bus)
 		r.Route("/repair-orders", func(r chi.Router) {
 			r.Get("/", roHandler.List)
-			r.Post("/", roHandler.Create)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/", roHandler.Create)
 			r.Get("/{id}", roHandler.Get)
 			r.Patch("/{id}", roHandler.Update)
-			r.Delete("/{id}", roHandler.Delete)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Delete("/{id}", roHandler.Delete)
 			r.Route("/{id}/photos", func(r chi.Router) {
 				r.Get("/", photosHandler.List)
 				r.Post("/", photosHandler.Upload)
@@ -257,54 +257,57 @@ func main() {
 		custHandler := customers.NewHandler(pool)
 		r.Route("/customers", func(r chi.Router) {
 			r.Get("/", custHandler.List)
-			r.Post("/", custHandler.Create)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/", custHandler.Create)
 			r.Get("/{id}", custHandler.Get)
-			r.Patch("/{id}", custHandler.Update)
-			r.Put("/{id}", custHandler.Update)
-			r.Delete("/{id}", custHandler.Delete)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Patch("/{id}", custHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Put("/{id}", custHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Delete("/{id}", custHandler.Delete)
 		})
 
 		vehHandler := vehicles.NewHandler(pool)
 		r.Route("/vehicles", func(r chi.Router) {
 			r.Get("/", vehHandler.List)
-			r.Post("/", vehHandler.Create)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/", vehHandler.Create)
 			r.Get("/{id}", vehHandler.Get)
-			r.Patch("/{id}", vehHandler.Update)
-			r.Put("/{id}", vehHandler.Update)
-			r.Delete("/{id}", vehHandler.Delete)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Patch("/{id}", vehHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Put("/{id}", vehHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/{id}/archive", vehHandler.Archive)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Delete("/{id}", vehHandler.Delete)
 		})
 
 		r.Route("/estimates", func(r chi.Router) {
-			r.Post("/", estHandler.Create)
-			r.Put("/{id}", estHandler.Update)
-			r.Patch("/{id}", estHandler.Update)
-			r.Post("/{id}/send", estHandler.Send)
-			r.Post("/{id}/approve", estHandler.Approve)
-			r.Post("/{id}/pay", estHandler.Pay)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/", estHandler.Create)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Put("/{id}", estHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Patch("/{id}", estHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/{id}/send", estHandler.Send)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/{id}/approve", estHandler.Approve)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/{id}/pay", estHandler.Pay)
 			r.Get("/ro/{ro_id}", estHandler.GetByRO)
 		})
 
 		userHandler := users.NewHandler(pool)
 		r.Route("/users", func(r chi.Router) {
 			r.Get("/", userHandler.List)
-			r.Post("/", userHandler.Create)
-			r.Put("/{id}", userHandler.Update)
-			r.Patch("/{id}", userHandler.Update)
-			r.Delete("/{id}", userHandler.Delete)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Post("/", userHandler.Create)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Put("/{id}", userHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Patch("/{id}", userHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Delete("/{id}", userHandler.Delete)
 		})
 
 		invHandler := inventory.NewHandler(pool, bus)
 		r.Route("/inventory", func(r chi.Router) {
 			r.Get("/", invHandler.List)
-			r.Post("/", invHandler.Create)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/", invHandler.Create)
 			r.Get("/{id}", invHandler.Get)
-			r.Patch("/{id}", invHandler.Update)
-			r.Delete("/{id}", invHandler.Delete)
-			r.Post("/restock", invHandler.Restock)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Patch("/{id}", invHandler.Update)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/{id}/archive", invHandler.Archive)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Delete("/{id}", invHandler.Delete)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/restock", invHandler.Restock)
 		})
 
 		laborHandler := labor.NewHandler(pool, bus)
 		r.Route("/labor", func(r chi.Router) {
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/manual", laborHandler.AddManual)
 			r.Post("/clock-in", laborHandler.ClockIn)
 			r.Post("/clock-out/{id}", laborHandler.ClockOut)
 			r.Get("/ro/{ro_id}", laborHandler.ListByRO)
@@ -313,20 +316,20 @@ func main() {
 		schedHandler := scheduling.NewHandler(pool)
 		r.Route("/schedule", func(r chi.Router) {
 			r.Get("/bays", schedHandler.ListBays)
-			r.Post("/bays", schedHandler.CreateBay)
-			r.Delete("/bays/{id}", schedHandler.DeleteBay)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Post("/bays", schedHandler.CreateBay)
+			r.With(middleware.RBACMiddleware("owner", "admin")).Delete("/bays/{id}", schedHandler.DeleteBay)
 			r.Get("/", schedHandler.ListSchedules)
-			r.Post("/", schedHandler.CreateSchedule)
-			r.Post("/assign", schedHandler.AssignRO)
-			r.Post("/unassign", schedHandler.UnassignRO)
-			r.Delete("/{id}", schedHandler.DeleteSchedule)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/", schedHandler.CreateSchedule)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/assign", schedHandler.AssignRO)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/unassign", schedHandler.UnassignRO)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Delete("/{id}", schedHandler.DeleteSchedule)
 		})
 
 		portalHandler := portal.NewHandler(pool)
 		r.Route("/portal", func(r chi.Router) {
 			r.Get("/{customer_id}/estimates", portalHandler.GetEstimates)
 			r.Get("/{customer_id}/history", portalHandler.GetServiceHistory)
-			r.Post("/estimates/{id}/approve", portalHandler.ApproveEstimate)
+			r.With(middleware.RBACMiddleware("owner", "admin", "service_writer")).Post("/estimates/{id}/approve", portalHandler.ApproveEstimate)
 		})
 	})
 

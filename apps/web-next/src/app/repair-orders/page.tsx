@@ -7,7 +7,9 @@ import type { RepairOrder, Customer, Vehicle } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Plus, ClipboardList, Car, X } from "lucide-react";
+import { StatCard } from "@/components/ui/StatCard";
+import { InlineLabor } from "@/components/InlineLabor";
+import { Plus, ClipboardList, Car, X, Clock, Wrench, CheckCircle2 } from "lucide-react";
 
 export default function RepairOrdersPage() {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
@@ -51,6 +53,9 @@ export default function RepairOrdersPage() {
   };
 
   const customerMap = new Map(customers.map((c) => [c.id, c.name]));
+  const awaiting = orders.filter((ro) => ["created", "diagnosed", "estimate_sent"].includes(ro.status)).length;
+  const active = orders.filter((ro) => ["approved", "in_progress"].includes(ro.status)).length;
+  const completed = orders.filter((ro) => ["completed", "invoiced", "closed"].includes(ro.status)).length;
 
   return (
     <div className="space-y-6">
@@ -63,6 +68,13 @@ export default function RepairOrdersPage() {
           </button>
         }
       />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Total Repair Orders" value={orders.length} icon={<ClipboardList className="w-5 h-5" />} color="blue" />
+        <StatCard label="Awaiting Service" value={awaiting} icon={<Clock className="w-5 h-5" />} color="amber" />
+        <StatCard label="In Service" value={active} icon={<Wrench className="w-5 h-5" />} color="blue" />
+        <StatCard label="Completed / Closed" value={completed} icon={<CheckCircle2 className="w-5 h-5" />} color="emerald" />
+      </div>
 
       {showForm && (
         <Card>
@@ -245,6 +257,8 @@ export default function RepairOrdersPage() {
           </div>
         )}
       </Card>
+
+      <InlineLabor orders={orders.filter((ro) => !["closed", "invoiced"].includes(ro.status))} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { RepairOrder, LaborLog, User as TechnicianUser } from "@/lib/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -10,7 +10,6 @@ import {
   Clock,
   Play,
   Square,
-  Wrench,
   UserCheck,
   Plus,
   DollarSign,
@@ -29,6 +28,8 @@ export default function LaborPage() {
   const [selectedTech, setSelectedTech] = useState("");
   const [description, setDescription] = useState("");
   const [clockedIn, setClockedIn] = useState(false);
+  const [techError, setTechError] = useState("");
+  const [savingTech, setSavingTech] = useState(false);
 
   // Add / Edit Tech State
   const [showAddTech, setShowAddTech] = useState(false);
@@ -56,7 +57,6 @@ export default function LaborPage() {
   }, []);
 
   const techMap = useMemo(() => new Map(technicians.map((t) => [t.id, t])), [technicians]);
-  const roMap = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders]);
 
   const clockIn = async () => {
     if (!selectedRO) return;
@@ -74,13 +74,18 @@ export default function LaborPage() {
   const createTech = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!techForm.name.trim() || !techForm.email.trim()) return;
-    await api.post("/users", {
-      ...techForm,
-      hourly_rate: Number(techForm.hourly_rate) || 100,
-    });
-    setTechForm({ name: "", email: "", role: "technician", specialities: "", hourly_rate: 100 });
-    setShowAddTech(false);
-    load();
+    setSavingTech(true);
+    setTechError("");
+    try {
+      await api.post("/users", { ...techForm, email: techForm.email.trim().toLowerCase(), hourly_rate: Number(techForm.hourly_rate) || 100 });
+      setTechForm({ name: "", email: "", role: "technician", specialities: "", hourly_rate: 100 });
+      setShowAddTech(false);
+      load();
+    } catch (error) {
+      setTechError(error instanceof ApiError && error.status === 403 ? "Only an owner or administrator can create technicians." : "Technician could not be created. The email may already be in use.");
+    } finally {
+      setSavingTech(false);
+    }
   };
 
   const startEditTech = (t: TechnicianUser) => {
@@ -202,6 +207,7 @@ export default function LaborPage() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
+              {techError && <p className="text-xs text-rose-400 mr-auto self-center" role="alert">{techError}</p>}
               <button
                 type="button"
                 onClick={() => {
@@ -212,8 +218,8 @@ export default function LaborPage() {
               >
                 Cancel
               </button>
-              <button type="submit" className="gf-btn-primary">
-                {editingTech ? "Save Changes" : "Create Technician"}
+              <button type="submit" disabled={savingTech} className="gf-btn-primary">
+                {savingTech ? "Saving…" : editingTech ? "Save Changes" : "Create Technician"}
               </button>
             </div>
           </form>

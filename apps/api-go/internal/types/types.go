@@ -44,6 +44,7 @@ type Vehicle struct {
 	Year         int       `json:"year"`
 	Color        string    `json:"color"`
 	LicensePlate string    `json:"license_plate"`
+	Archived     bool      `json:"archived"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -75,25 +76,25 @@ type RepairOrder struct {
 }
 
 type Estimate struct {
-	ID            string    `json:"id"`
-	ShopID        string    `json:"shop_id"`
-	RepairOrderID string    `json:"repair_order_id"`
-	Total         float64   `json:"total"`
-	Status        string    `json:"status"`
+	ID            string     `json:"id"`
+	ShopID        string     `json:"shop_id"`
+	RepairOrderID string     `json:"repair_order_id"`
+	Total         float64    `json:"total"`
+	Status        string     `json:"status"`
 	SentAt        *time.Time `json:"sent_at"`
 	ApprovedAt    *time.Time `json:"approved_at"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type EstimateItem struct {
-	ID         string  `json:"id"`
-	EstimateID string  `json:"estimate_id"`
-	Type       string  `json:"type"`
-	Description string `json:"description"`
-	Quantity   float64 `json:"quantity"`
-	UnitPrice  float64 `json:"unit_price"`
-	Total      float64 `json:"total"`
+	ID          string  `json:"id"`
+	EstimateID  string  `json:"estimate_id"`
+	Type        string  `json:"type"`
+	Description string  `json:"description"`
+	Quantity    float64 `json:"quantity"`
+	UnitPrice   float64 `json:"unit_price"`
+	Total       float64 `json:"total"`
 }
 
 type InventoryPart struct {
@@ -106,20 +107,21 @@ type InventoryPart struct {
 	MinStock    int       `json:"min_stock"`
 	UnitPrice   float64   `json:"unit_price"`
 	VendorID    *string   `json:"vendor_id"`
+	Archived    bool      `json:"archived"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type LaborLog struct {
-	ID            string    `json:"id"`
-	ShopID        string    `json:"shop_id"`
-	MechanicID    string    `json:"mechanic_id"`
-	RepairOrderID string    `json:"repair_order_id"`
-	Minutes       int       `json:"minutes"`
-	Description   string    `json:"description"`
-	ClockIn       time.Time `json:"clock_in"`
+	ID            string     `json:"id"`
+	ShopID        string     `json:"shop_id"`
+	MechanicID    string     `json:"mechanic_id"`
+	RepairOrderID string     `json:"repair_order_id"`
+	Minutes       int        `json:"minutes"`
+	Description   string     `json:"description"`
+	ClockIn       time.Time  `json:"clock_in"`
 	ClockOut      *time.Time `json:"clock_out"`
-	CreatedAt     time.Time `json:"created_at"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type Invoice struct {
