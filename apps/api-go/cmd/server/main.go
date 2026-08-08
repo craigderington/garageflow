@@ -103,7 +103,17 @@ func main() {
 	// which would cancel the SSE stream at /events after 30s. Applied per route
 	// group below instead, so everything except the stream still gets it.
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173", cfg.AppURL},
+		AllowedOrigins: []string{
+			"http://localhost:3000",
+			"http://localhost:5173",
+			"http://127.0.0.1:3000",
+			"http://127.0.0.1:5173",
+			"http://garageflow.localhost",
+			"https://garageflow.localhost",
+			"https://garageflow.studio",
+			"https://www.garageflow.studio",
+			cfg.AppURL,
+		},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
