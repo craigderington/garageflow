@@ -28,7 +28,8 @@ export default function VehiclesPage() {
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/vehicles", form);
+    const created = await api.post<Vehicle>("/vehicles", form);
+    setVehicles((current) => [created, ...current.filter((vehicle) => vehicle.id !== created.id)]);
     setForm({ customer_id: "", vin: "", make: "", model: "", year: 0, color: "", license_plate: "" });
     setShowForm(false);
     load();

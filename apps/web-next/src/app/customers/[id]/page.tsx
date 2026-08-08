@@ -118,11 +118,12 @@ export default function CustomerDetailPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post("/vehicles", {
+      const created = await api.post<Vehicle>("/vehicles", {
         customer_id: id,
         ...vehicleForm,
         year: Number(vehicleForm.year) || 0,
       });
+      setVehicles((current) => [created, ...current.filter((vehicle) => vehicle.id !== created.id)]);
       setShowAddVehicle(false);
       setVehicleForm({
         make: "",

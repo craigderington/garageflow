@@ -41,6 +41,24 @@ test.describe("vehicles", () => {
     await expect(row).toContainText(custName);
   });
 
+  test("create a vehicle from customer detail and see it immediately", async ({ app, api }) => {
+    const customer = await makeCustomer(api, `Detail Owner ${uniq()}`);
+    const plate = uniq("CD").toUpperCase().slice(0, 8);
+
+    await gotoReady(app, `/customers/${customer.id}`);
+    await app.getByRole("button", { name: /add vehicle/i }).first().click();
+    const form = app.locator("form").filter({ has: app.getByPlaceholder("License Plate") });
+    await form.getByPlaceholder("Year (e.g. 2022)").fill("2023");
+    await form.getByPlaceholder("Make").fill("Toyota");
+    await form.getByPlaceholder("Model").fill("Tacoma");
+    await form.getByPlaceholder("License Plate").fill(plate);
+    await form.getByRole("button", { name: /add vehicle/i }).click();
+
+    const vehicle = app.getByText("2023 Toyota Tacoma");
+    await expect(vehicle).toBeVisible();
+    await expect(app.getByText(plate)).toBeVisible();
+  });
+
   test("customer is required to create a vehicle", async ({ app }) => {
     await gotoReady(app, "/vehicles");
     await app.getByRole("button", { name: /add vehicle/i }).click();

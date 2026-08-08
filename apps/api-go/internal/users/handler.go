@@ -2,11 +2,15 @@ package users
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/garageflow/api-go/internal/middleware"
@@ -88,6 +92,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		req.HourlyRate = 100.00
 	}
 
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	u := types.User{
 		ID:           uuid.New().String(),
 		ShopID:       shopID,
@@ -105,6 +110,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		u.ID, u.ShopID, u.Email, u.Name, u.Role, u.Specialities, u.HourlyRate, u.CreatedAt, u.UpdatedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			http.Error(w, `{"error":"email already in use"}`, http.StatusConflict)
+			return
+		}
+		log.Printf("users: create technician failed shop=%s: %v", shopID, err)
 		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
 		return
 	}

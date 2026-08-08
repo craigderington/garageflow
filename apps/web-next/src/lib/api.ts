@@ -13,6 +13,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
+    cache: "no-store",
     headers: isForm ? { ...options.headers } : { "Content-Type": "application/json", ...options.headers },
     ...options,
   });
